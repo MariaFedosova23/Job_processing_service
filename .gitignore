@@ -1,0 +1,49 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Виртуальные окружения ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Тесты и кэш инструментов ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# --- IDE ---
+.idea/
+.vscode/
+*.swp
+
+
+.env
+.env.*
+!.env.example
+
+logs/
+*.log
+
+
+*.sqlite3
+*.db
+*.sql.gz
+
+
+.DS_Store
+Thumbs.db
+desktop.ini

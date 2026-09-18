@@ -1,6 +1,5 @@
-import pytest
 
-from src.models.task import TaskDB
+from src.database.models.task import TaskDB
 
 
 def make_tasks():

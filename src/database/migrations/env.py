@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-from src.models.task import TaskDB  # noqa: F401
+from src.database.models.task import TaskDB  # noqa: F401
 from src.database import Base
 
 

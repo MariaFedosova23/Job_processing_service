@@ -22,6 +22,6 @@ TIME_BACKGROUND_TASK = 3
 ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
     "new": {"processing", "error", 'done'},
     "processing": {"done", "error", 'new'},
-    "done": {"processing", "error", 'new'}, 
+    "done": {"processing", "error", 'new'},
     "error": {"processing", "new", 'done'},
 }

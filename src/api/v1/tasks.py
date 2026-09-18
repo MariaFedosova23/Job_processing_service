@@ -1,13 +1,7 @@
 import logging
 
-from fastapi import HTTPException, status, Query, APIRouter, BackgroundTasks
-from fastapi.responses import Response
-from sqlalchemy import select
+from fastapi import Query, APIRouter, BackgroundTasks
 
-
-from src.api.v1.dependencies import SessionDep
-from src.models.task import TaskDB
-from src.utils import unique_external_id
 from src.schemas.tasks import (
     TaskCreateSchema, TaskResponseSchema,
     ShortResponseSchema, TaskStatusSchema,
@@ -20,25 +14,21 @@ from src.constants import (
     TASK_PRIORITY_LOW,
     TIME_BACKGROUND_TASK
 )
-from src.services.task_service import process, get_task_or_404, set_task_status
-from src.validators.task import (
-    validate_status_transition, validate_task_can_be_processed
-)
-
+from src.api.v1.dependencies import TaskServiceDep
+from src.services.task_service import TaskService
 
 logger = logging.getLogger('job_processing_service')
 
-router = APIRouter()
+router = APIRouter(prefix='/api/v1/tasks', tags=['Задания'])
 
 
 @router.get(
-        path='/api/v1/tasks',
+        path='',
         response_model=list[TaskResponseSchema],
         summary='Получить список заданий',
-        tags=['Задания']
 )
 async def get_tasks(
-    db: SessionDep,
+    service: TaskServiceDep,
     status: Status | None = Query(
         None, description='Фильтр по статусу задания'
     ),
@@ -49,144 +39,73 @@ async def get_tasks(
     offset: int = Query(DEFAULT_OFFSET, ge=MIN_OFFSET),
 ) -> list[TaskResponseSchema]:
 
-    stmt = select(TaskDB)
-
-    if status is not None:
-        stmt = stmt.where(TaskDB.status == status)
-    if priority is not None:
-        stmt = stmt.where(TaskDB.priority == priority)
-
-    stmt = stmt.offset(offset).limit(limit)
-    result = await db.execute(stmt)
-    return result.scalars().all()
+    return await service.list_tasks(
+        status=status, priority=priority, limit=limit, offset=offset
+    )
 
 
 @router.get(
-        path='/api/v1/tasks/{task_id}',
+        path='/{task_id}',
+        response_model=TaskResponseSchema,
         summary='Получить задание',
-        tags=['Задания']
 )
 async def get_task(
-    db: SessionDep,
+    service: TaskServiceDep,
     task_id: int
 ) -> TaskResponseSchema:
-    return await get_task_or_404(db, task_id)
+    return await service.get_or_raise(task_id)
 
 
 @router.post(
-        path='/api/v1/tasks',
+        path='',
         response_model=ShortResponseSchema,
         summary='Создать задание',
-        tags=['Задания']
 )
 async def create_task(
-    db: SessionDep,
+    service: TaskServiceDep,
     task: TaskCreateSchema
 ) -> ShortResponseSchema:
-    await unique_external_id(task.external_id, db)
-    new_task = TaskDB(
-        title=task.title,
-        text=task.text,
-        priority=task.priority,
-        external_id=task.external_id
-    )
-    try:
-        db.add(new_task)
-        await db.commit()
-        await db.refresh(new_task)
-    except Exception:
-        logger.exception(
-            'Ошибка БД при создании задачи: external_id=%s',
-            task.external_id,
-            extra={
-                'event': 'db_error',
-            },
-        )
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail='Не удалось создать задачу',
-        )
-    logger.info(
-        'Задача создана: external_id=%s',
-        task.external_id,
-        extra={
-            'event': "task_created",
-            'task_id': new_task.id,
-        },
-    )
-    return new_task
+    return await service.create(task)
 
-
+    
 @router.patch(
-        path='/api/v1/tasks/{task_id}/status',
+        path='/{task_id}/status',
         response_model=TaskResponseSchema,
         summary='Изменить статус задание',
-        tags=['Задания']
 )
 async def patch_status_of_task(
     payload: TaskStatusSchema,
     task_id: int,
-    db: SessionDep
+    service: TaskServiceDep
 ) -> TaskResponseSchema:
-    task_db = await get_task_or_404(
-        db, task_id, event='task_status_change_failed'
-    )
-    old_status = task_db.status
-    new_status = payload.status.value
-    validate_status_transition(task_id, old_status, new_status)
+    return await service.change_status(task_id, payload.status)
     
-    return await set_task_status(db, task_db, new_status)
-
    
 @router.delete(
-    '/api/v1/tasks/{task_id}',
+    '/{task_id}',
     summary='Удаление задачи',
-    tags=['Задания']
 )
 async def delete_task(
     task_id: int,
-    db: SessionDep
+    service: TaskServiceDep
 ):
-    task = await get_task_or_404(db, task_id)
-    try:
-        await db.delete(task)
-        await db.commit()
-    except Exception:
-        logger.exception(
-            'Ошибка БД при удалении задачи: task_id=%s',
-            task.id
-        )
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail='Не удалось удалить задачу',
-        )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    await service.delete(task_id)
+    
 
 
 @router.post(
-    '/api/v1/tasks/{task_id}/process',
+    '/{task_id}/process',
     summary='Обработка задания',
-    tags=['Задания'],
     response_model=TaskResponseSchema
 )
 async def process_task(
     task_id: int,
-    db: SessionDep,
+    service: TaskServiceDep,
     background_task: BackgroundTasks
 ):
-    task = await get_task_or_404(db, task_id)
-    validate_task_can_be_processed(task_id, task.status)
-    
-    task = await set_task_status(
-        db,
-        task,
-        Status.PROCESSING,
-        error_detail='Не удалось запустить обработку',
-    )
+    task = await service.start_processing(task_id)
     
     background_task.add_task(
-        process, task_id, delay=TIME_BACKGROUND_TASK
+        TaskService.process, task_id, delay=TIME_BACKGROUND_TASK
     )
     return task

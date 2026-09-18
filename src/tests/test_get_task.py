@@ -1,4 +1,4 @@
-from src.models.task import TaskDB
+from src.database.models.task import TaskDB
 
 
 async def test_get_task_not_found(client):

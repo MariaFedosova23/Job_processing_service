@@ -1,9 +1,9 @@
 import logging
 
 
-from asyncio import sleep
 
-from src.database import AsyncSessionLocal
+# from src.database import AsyncSessionLocal
+from src.worker.dispatcher import enqueue_process_task
 from src.database.models.task import TaskDB
 from src.schemas.tasks import Status, TaskCreateSchema
 from src.database.repositories.task import TaskRepository
@@ -15,6 +15,8 @@ from src.services.validator_task import (
     validate_status_transition,
     validate_task_can_be_processed
 )
+
+
 
 logger = logging.getLogger('job_processing_service')
 
@@ -96,50 +98,55 @@ class TaskService:
             task_id,
             extra={"event": "task_deleted", "task_id": task_id},
         )
-
     async def start_processing(self, task_id: int) -> TaskDB:
         task = await self.get_or_raise(task_id)
         validate_task_can_be_processed(task_id, task.status)
 
-        task = await self.repo.update_status(task, Status.PROCESSING)
+        task = await self.repo.update_status(task, Status.QUEUED)
 
         logger.info(
             "Запущена обработка задачи: task_id=%s",
             task_id,
             extra={"event": "task_processing_started", "task_id": task_id},
         )
+        try:
+            enqueue_process_task(task_id)
+        except Exception as e:
+            task.status = Status.NEW
+            raise
         return task
 
-    @staticmethod
-    async def process(task_id: int, delay: int) -> None:
-        await sleep(delay)
-        async with AsyncSessionLocal() as session:
-            repo = TaskRepository(session)
-            task = await repo.get(task_id)
-            if task is None:
-                logger.warning(
-                    "Задача не найдена во время обработки: task_id=%s",
-                    task_id,
-                    extra={"event": "task_not_found", "task_id": task_id},
-                )
-                return
-            try:
-                await repo.update_status(task, Status.DONE)
-                logger.info(
-                    "Задача обработана: task_id=%s",
-                    task_id,
-                    extra={
-                        "event": "task_processing_done",
-                        "task_id": task_id,
-                    },
-                )
-            except Exception:
-                logger.exception(
-                    "Ошибка при фоновой обработке: task_id=%s",
-                    task_id,
-                    extra={
-                        "event": "task_processing_failed",
-                        "task_id": task_id,
-                    },
-                )
+   
+    # @staticmethod
+    # async def process(task_id: int, delay: int) -> None:
+    #     await sleep(delay)
+    #     async with AsyncSessionLocal() as session:
+    #         repo = TaskRepository(session)
+    #         task = await repo.get(task_id)
+    #         if task is None:
+    #             logger.warning(
+    #                 "Задача не найдена во время обработки: task_id=%s",
+    #                 task_id,
+    #                 extra={"event": "task_not_found", "task_id": task_id},
+    #             )
+    #             return
+    #         try:
+    #             await repo.update_status(task, Status.DONE)
+    #             logger.info(
+    #                 "Задача обработана: task_id=%s",
+    #                 task_id,
+    #                 extra={
+    #                     "event": "task_processing_done",
+    #                     "task_id": task_id,
+    #                 },
+    #             )
+    #         except Exception:
+    #             logger.exception(
+    #                 "Ошибка при фоновой обработке: task_id=%s",
+    #                 task_id,
+    #                 extra={
+    #                     "event": "task_processing_failed",
+    #                     "task_id": task_id,
+    #                 },
+    #             )
                

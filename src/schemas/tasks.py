@@ -1,5 +1,4 @@
 from datetime import datetime
-from enum import Enum
 from typing import Annotated
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -8,7 +7,8 @@ from src.constants import (
     TASK_PRIORITY_DEFAULT, TASK_PRIORITY_HIGH, TASK_PRIORITY_LOW,
     TASK_TEXT_MIN_LENGTH, TASK_TITLE_MAX_LENGTH, TASK_TITLE_MIN_LENGTH
 )
-from enums import Status
+from src.enums import Status
+
 
 
 
@@ -42,3 +42,6 @@ class ShortResponseSchema(TaskStatusSchema):
 class TaskResponseSchema(TaskCreateSchema, ShortResponseSchema):
     created_at: datetime
     updated_at: datetime
+
+class TaskResponseProcessSchema(ShortResponseSchema):
+    celery_task_id: str

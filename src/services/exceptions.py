@@ -17,15 +17,16 @@ class DuplicateExternalIdError(DomainError):
 
 
 class InvalidStatusTransitionError(DomainError):
-    def __init__(self, old_status: str, new_status: str) -> None:
+    def __init__(self, task_id: int, old_status: str, new_status: str) -> None:
+        self.task_id = task_id
         self.old_status = old_status
         self.new_status = new_status
         super().__init__(
-            f"Недопустимый переход статуса: {old_status} -> {new_status}"
+            f"Недопустимый переход статуса задачи {task_id}: {old_status} -> {new_status}"
         )
 
 
 class TaskCannotBeProcessedError(DomainError):
-    def __init__(self, status: str) -> None:
+    def __init__(self, task_id: int, status: str) -> None:
         self.status = status
-        super().__init__(f"Задание в статусе '{status}' нельзя обработать")
+        super().__init__(f"Задание задачи {task_id} в статусе '{status}' нельзя обработать")

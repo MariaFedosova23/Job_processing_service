@@ -5,7 +5,7 @@ from fastapi import Query, APIRouter, BackgroundTasks
 from src.schemas.tasks import (
     TaskCreateSchema, TaskResponseSchema,
     ShortResponseSchema, TaskStatusSchema,
-    Status
+    TaskResponseProcessSchema
 )
 from src.constants import (
     DEFAULT_LIMIT, DEFAULT_OFFSET,
@@ -16,6 +16,7 @@ from src.constants import (
 )
 from src.api.v1.dependencies import TaskServiceDep
 from src.services.task_service import TaskService
+from src.enums import Status
 
 logger = logging.getLogger('job_processing_service')
 
@@ -96,16 +97,11 @@ async def delete_task(
 @router.post(
     '/{task_id}/process',
     summary='Обработка задания',
-    response_model=TaskResponseSchema
+    response_model=ShortResponseSchema
 )
 async def process_task(
     task_id: int,
     service: TaskServiceDep,
-    background_task: BackgroundTasks
 ):
-    task = await service.start_processing(task_id)
-    
-    background_task.add_task(
-        TaskService.process, task_id, delay=TIME_BACKGROUND_TASK
-    )
-    return task
+    return await service.start_processing(task_id)
+

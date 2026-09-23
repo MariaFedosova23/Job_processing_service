@@ -8,13 +8,8 @@ from src.constants import (
     TASK_PRIORITY_DEFAULT, TASK_PRIORITY_HIGH, TASK_PRIORITY_LOW,
     TASK_TEXT_MIN_LENGTH, TASK_TITLE_MAX_LENGTH, TASK_TITLE_MIN_LENGTH
 )
+from enums import Status
 
-
-class Status(str, Enum):
-    NEW = 'new'
-    PROCESSING = 'processing'
-    DONE = 'done'
-    ERROR = 'error'
 
 
 class TaskCreateSchema(BaseModel):

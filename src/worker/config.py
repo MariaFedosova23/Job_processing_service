@@ -10,7 +10,7 @@ TIMEZONE = "UTC"
 ENABLE_UTC = True
 
 # Опционально: маршрутизация задач по очередям
-TASK_ROUTES = {
-    "worker.tasks.tasks.process_task": {"queue": "default"},
-    # "worker.tasks.reports.generate_report": {"queue": "reports"},
-}
+# TASK_ROUTES = {
+#     "worker.tasks.tasks.process_task": {"queue": "default"},
+#     # "worker.tasks.reports.generate_report": {"queue": "reports"},
+# }

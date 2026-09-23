@@ -6,7 +6,7 @@ from src.worker.config import (
     ENABLE_UTC,
     RESULT_BACKEND,
     RESULT_SERIALIZER,
-    TASK_ROUTES,
+    # TASK_ROUTES,
     TASK_SERIALIZER,
     TIMEZONE,
 )
@@ -24,5 +24,5 @@ celery.conf.update(
     accept_content=ACCEPT_CONTENT,
     timezone=TIMEZONE,
     enable_utc=ENABLE_UTC,
-    task_routes=TASK_ROUTES,
+    # task_routes=TASK_ROUTES,
 )

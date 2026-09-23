@@ -151,3 +151,16 @@ alembic upgrade head
 ```bash
 python -m src.main
 ```
+
+### 5. Запустить celery
+```bash
+celery -A src.worker.app:celery worker --loglevel=info
+```
+
+### 6. Запуск postges
+```bash
+docker run --name postgres-dev \
+  -e POSTGRES_PASSWORD=mysecretpassword \
+  -p 5432:5432 \
+  -d postgres
+```

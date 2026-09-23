@@ -17,7 +17,12 @@ SQLALCHEMY_DATABASE_URL = os.getenv('DATABASE_URL')
 if not SQLALCHEMY_DATABASE_URL:
     raise ValueError("SQLALCHEMY_DATABASE_URL не установлена!")
 
-engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=False)
+engine = create_async_engine(
+    SQLALCHEMY_DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=1800
+)
 
 
 AsyncSessionLocal = async_sessionmaker(

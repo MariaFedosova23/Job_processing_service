@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import Query, APIRouter, BackgroundTasks
+from fastapi import Query, APIRouter
 
 from src.schemas.tasks import (
     TaskCreateSchema, TaskResponseSchema,
@@ -12,12 +12,12 @@ from src.constants import (
     MIN_LIMIT, MIN_OFFSET, MAX_LIMIT,
     TASK_PRIORITY_HIGH,
     TASK_PRIORITY_LOW,
-    TIME_BACKGROUND_TASK
+    
 )
-from src.api.v1.dependencies import TaskServiceDep
-from src.services.task_service import TaskService
+from src.api.v1.dependencies import TaskServiceDep, TaskServiceProcessDep
+# from src.services.task_service import TaskService
 from src.enums import Status
-from src.worker.tasks.tasks import process_task, test_task
+# from src.worker.tasks.tasks import process_task
 
 logger = logging.getLogger('job_processing_service')
 
@@ -106,9 +106,6 @@ async def process_task(
 ):
     return await service.start_processing(task_id)
 
-@router.post('task_id/{task_id}/xx')
-async def xx(task_id: int):
-    task= test_task.delay(task_id)
-    return {'hellow': task.id, 'another': task.status}
+
 
 

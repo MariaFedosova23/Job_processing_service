@@ -1,5 +1,6 @@
 import logging
-
+from typing import Callable
+from datetime import datetime, timezone
 
 
 # from src.database import AsyncSessionLocal
@@ -16,14 +17,14 @@ from src.services.validator_task import (
     validate_task_can_be_processed
 )
 
-
-
 logger = logging.getLogger('job_processing_service')
+EnqueueFn = Callable[[int], None]
 
 
 class TaskService:
-    def __init__(self, repo: TaskRepository):
+    def __init__(self, repo: TaskRepository, enqueue: EnqueueFn | None = None):
         self.repo = repo
+        self._enqueue = enqueue or (lambda _: None)
 
     async def list_tasks(
             self,
@@ -98,6 +99,7 @@ class TaskService:
             task_id,
             extra={"event": "task_deleted", "task_id": task_id},
         )
+
     async def start_processing(self, task_id: int) -> TaskDB:
         task = await self.get_or_raise(task_id)
         validate_task_can_be_processed(task_id, task.status)
@@ -105,17 +107,88 @@ class TaskService:
         task = await self.repo.update_status(task, Status.QUEUED)
 
         logger.info(
-            "Запущена обработка задачи: task_id=%s",
-            task_id,
+            "Запущена обработка задачи: task_id=%s", task_id,
             extra={"event": "task_processing_started", "task_id": task_id},
         )
         try:
-            enqueue_process_task(task_id)
+            self._enqueue(task_id)
         except Exception:
+            logger.exception(
+                "Не удалось поставить задачу в очередь: task_id=%s", task_id,
+                extra={"event": "task_enqueue_failed", "task_id": task_id},
+            )
             await self.repo.update_status(task, Status.NEW)
             raise
         return task
+    
+    async def begin_processing(self, task_id: int) -> TaskDB | None:
+        task = await self.repo.mark_processing(
+            task_id,
+            started_at=datetime.now(timezone.utc)
+        )
+        if task is None:
+            logger.info(
+                "Задача не в QUEUED, пропускаем: task_id=%s",
+                task_id,
+                extra={"event": "task_skip_not_queued", "task_id": task_id},
+            )
+            return None
+        logger.info(
+            "Обработка начата: task_id=%s",
+            task_id,
+            extra={"event": "task_processing_begin", "task_id": task_id},
+        )
+        return task
 
+    async def complete_processing(
+        self,
+        task_id: int,
+        *,
+        original_length: int,
+        word_count: int,
+    ) -> TaskDB | None:
+        """
+        Сохраняет результат и переводит PROCESSING → DONE.
+        """
+        now = datetime.now(timezone.utc)
+        task = await self.repo.save_result_and_complete(
+            task_id,
+            original_length=original_length,
+            word_count=word_count,
+            processed_at=now,
+            finished_at=now,
+        )
+        if task is None:
+            return None
+        logger.info(
+            "Обработка завершена: task_id=%s", task_id,
+            extra={"event": "task_processing_done", "task_id": task_id},
+        )
+        return task
+    
+    async def fail_processing(self, task_id: int, error: str) -> TaskDB | None:
+        """
+        PROCESSING → ERROR + текст ошибки.
+        """
+        task = await self.repo.mark_failed(
+            task_id,
+            error=error,
+            finished_at=datetime.now(timezone.utc),
+        )
+        if task is None:
+            logger.warning(
+                "mark_failed: задача не найдена: task_id=%s", task_id,
+                extra={"event": "task_fail_not_found", "task_id": task_id},
+            )
+            return None
+
+        logger.error(
+            "Обработка упала: task_id=%s, error=%s", task_id, error,
+            extra={"event": "task_processing_failed", "task_id": task_id},
+        )
+        return task
+
+    
    
     # @staticmethod
     # async def process(task_id: int, delay: int) -> None:

@@ -17,6 +17,7 @@ from src.constants import (
 from src.api.v1.dependencies import TaskServiceDep
 from src.services.task_service import TaskService
 from src.enums import Status
+from src.worker.tasks.tasks import process_task, test_task
 
 logger = logging.getLogger('job_processing_service')
 
@@ -104,4 +105,10 @@ async def process_task(
     service: TaskServiceDep,
 ):
     return await service.start_processing(task_id)
+
+@router.post('task_id/{task_id}/xx')
+async def xx(task_id: int):
+    task= test_task.delay(task_id)
+    return {'hellow': task.id, 'another': task.status}
+
 

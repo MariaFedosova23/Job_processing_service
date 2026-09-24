@@ -1,7 +1,9 @@
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models.task import TaskDB
+from src.database.models.task import TaskDB, TaskResultDB
 from src.schemas.tasks import Status
 
 
@@ -49,3 +51,121 @@ class TaskRepository:
         await self.session.commit()
         await self.session.refresh(task)
         return task
+
+    async def mark_processing(
+        self,
+        task_id: int,
+        *,
+        started_at: datetime,
+    ) -> TaskDB | None:
+        task = await self.session.get(TaskDB, task_id)
+        if task is None:
+            return
+        if task.status != Status.QUEUED:
+            return
+        task.status = Status.PROCESSING
+        task.started_at = started_at
+        task.error = None
+        await self.session.commit()
+        await self.session.refresh(task)
+        return task
+
+    async def save_result(
+        self,
+        task_id: int,
+        *,
+        original_length: int,
+        word_count: int,
+        processed_at: datetime,
+    ) -> TaskResultDB | None:
+        task = await self.session.get(TaskDB, task_id)
+        if task is None:
+            return None
+        result = TaskResultDB(
+            task_id=task_id,
+            original_length=original_length,
+            word_count=word_count,
+            processed_at=processed_at,
+        )
+        self.session.add(result)
+        await self.session.commit()
+        await self.session.refresh(result)
+        return result
+
+
+    async def mark_done(
+        self,
+        task_id: int,
+        *,
+        finished_at: datetime
+    ) -> TaskDB | None:
+        
+        task = await self.session.get(TaskDB, task_id)
+        if task is None:
+            return None
+        task.status = Status.DONE
+        task.finished_at = finished_at
+        task.error = None
+        await self.session.commit()
+        await self.session.refresh(task)
+        return task
+
+
+    async def mark_failed(
+        self,
+        task_id: int,
+        *,
+        error: str,
+        finished_at: datetime,
+    ) -> TaskDB | None:
+        """
+        Ставит задаче статус ERROR,
+        записывает текст ошибки и время завершения.
+        Возвращает None, если задачи нет.
+        """
+        task = await self.session.get(TaskDB, task_id)
+        if task is None:
+            return None
+
+        task.status = Status.ERROR       
+        task.error = error
+        task.finished_at = finished_at
+        await self.session.commit()
+        await self.session.refresh(task)
+        return task
+
+
+    async def save_result_and_complete(
+        self,
+        task_id: int,
+        *,
+        original_length: int,
+        word_count: int,
+        processed_at: datetime,
+        finished_at: datetime,
+    ) -> TaskDB | None:
+        """
+        Атомарно: INSERT TaskResultDB + UPDATE TaskDB.status=DONE + finished_at.
+        Один commit → либо оба изменения применились, либо ни одно.
+        Это предпочтительный вариант для воркера.
+        """
+        task = await self.session.get(TaskDB, task_id)
+        if task is None:
+            return None
+
+        self.session.add(TaskResultDB(
+            task_id=task_id,
+            original_length=original_length,
+            word_count=word_count,
+            processed_at=processed_at,
+        ))
+        task.status = Status.DONE
+        task.finished_at = finished_at
+        task.error = None
+
+        await self.session.commit()
+        await self.session.refresh(task)
+        return task
+        
+
+        

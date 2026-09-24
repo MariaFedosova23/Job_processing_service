@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncSession
 )
+from sqlalchemy.pool import NullPool
+from contextlib import asynccontextmanager
 
 
 load_dotenv()
@@ -20,10 +22,13 @@ if not SQLALCHEMY_DATABASE_URL:
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
     echo=False,
-    pool_pre_ping=True,
-    pool_recycle=1800
 )
 
+engine_worker = create_async_engine(
+    SQLALCHEMY_DATABASE_URL,
+    poolclass=NullPool,
+    echo=False,
+)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
@@ -31,6 +36,11 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+AsyncSessionWorker = async_sessionmaker(
+    bind=engine_worker,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
 
 class Base(DeclarativeBase):
     pass
@@ -38,4 +48,18 @@ class Base(DeclarativeBase):
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
-        yield session
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def get_session() -> AsyncSession:
+    async with AsyncSessionWorker() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise

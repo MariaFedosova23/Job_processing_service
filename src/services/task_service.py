@@ -3,7 +3,7 @@ import logging
 
 
 # from src.database import AsyncSessionLocal
-from src.worker.dispatcher import enqueue_process_task
+# from src.worker.dispatcher import enqueue_process_task
 from src.database.models.task import TaskDB
 from src.schemas.tasks import Status, TaskCreateSchema
 from src.database.repositories.task import TaskRepository
@@ -111,8 +111,8 @@ class TaskService:
         )
         try:
             enqueue_process_task(task_id)
-        except Exception as e:
-            task.status = Status.NEW
+        except Exception:
+            await self.repo.update_status(task, Status.NEW)
             raise
         return task
 

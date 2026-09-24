@@ -18,7 +18,7 @@ MIN_OFFSET = 0
 SIZE_LOGGING_FILES = 5 * 1024 * 1024
 COUNT_LOGGING_FILES = 5
 
-TIME_BACKGROUND_TASK = 3
+TIME_CELERY_TASK = 3
 
 
 ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
@@ -28,3 +28,8 @@ ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
     "error": {"processing", "new", 'done', 'queued'},
     'queued': {'new', 'processing', 'done', 'error'},
 }
+
+
+RETRY_BACKOFF_MAX=60
+
+MAX_TRIES=3

@@ -28,26 +28,43 @@ logger = logging.getLogger('job_processing_service')
     autoretry_for=(OperationalError,),
     retry_backoff=True,
     retry_backoff_max=RETRY_BACKOFF_MAX,
-    max_retries=MAX_TRIES
+    max_retries=MAX_TRIES,
+    retry_jitter=True
 )
 def process_task(self, task_id: int) -> None:
-    asyncio.run(process_task_async(task_id))
+    is_final_attempt = self.request.retries >= self.max_retries
+
+    asyncio.run(
+        process_task_async(
+            task_id,
+            attempt=self.request.retries,
+            is_final_attempt=is_final_attempt,
+        )
+    )
 
 
-async def process_task_async(task_id: int) -> None:
+async def process_task_async(
+        task_id: int,
+        attempt: int = 0,
+        is_final_attempt: bool = False,
+) -> None:
+    await asyncio.sleep(10)
     async with get_session() as session:
         service = TaskService(
             TaskRepository(session)
         )
-        task = await service.begin_processing(task_id)
+        task = await service.begin_processing(
+            task_id, allow_processing=attempt > 0
+        )
         if task is None:
             return
-        
+        await asyncio.sleep(10)
         text = task.text
     try:
         found = [word for word in FORBIDDEN_WORD_IN_TEXT if word in text.lower()]
         if found:
             raise ForbiddenWordsError(found)
+           
 
         original_length = len(text)
         word_count = len(text.split())
@@ -64,7 +81,20 @@ async def process_task_async(task_id: int) -> None:
                 word_count=word_count,
             )
     except OperationalError:
+        if is_final_attempt:
+            logger.exception(
+                'Исчерпаны попытки обработки: task_id=%s', task_id,
+                extra={'event': 'task_retries_retries_exhausted', 'task_id': task_id},
+            )
+            async with get_session() as session:
+                service = TaskService(TaskRepository(session))
+                await service.fail_processing(
+                    task_id,
+                    error=f"Не удалось обработать после {attempt + 1} попыток",
+                )
+            return None
         raise
+
     except TaskProcessingError as exc:
         logger.warning(
             "Бизнес-ошибка обработки: task_id=%s, error=%s",
@@ -92,11 +122,3 @@ async def process_task_async(task_id: int) -> None:
                 error=f'Внутренняя ошибка: {type(exc).__name__}',
             )
         
-
-
-
-    
-
-
-
-

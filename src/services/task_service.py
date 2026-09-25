@@ -125,14 +125,20 @@ class TaskService:
             raise
         return StartProcessingResult(task=task, celery_task_id=celery_task_id)
     
-    async def begin_processing(self, task_id: int) -> TaskDB | None:
+    async def begin_processing(
+            self,
+            task_id: int,
+            *,
+            allow_processing: bool = False,
+        ) -> TaskDB | None:
         task = await self.repo.mark_processing(
             task_id,
-            started_at=datetime.now(timezone.utc)
+            started_at=datetime.now(timezone.utc),
+            allow_processing=allow_processing,
         )
         if task is None:
             logger.info(
-                "Задача не в QUEUED, пропускаем: task_id=%s",
+                "Задача не в QUEUED (или PROCESSING при ретрае), пропускаем: task_id=%s",
                 task_id,
                 extra={"event": "task_skip_not_queued", "task_id": task_id},
             )

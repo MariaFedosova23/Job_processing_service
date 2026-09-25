@@ -68,17 +68,28 @@ class TaskRepository:
         task_id: int,
         *,
         started_at: datetime,
+        allow_processing: bool = False,
     ) -> TaskDB | None:
+        
         task = await self.session.get(TaskDB, task_id)
+
         if task is None:
-            return
-        if task.status != Status.QUEUED:
-            return
+            return None
+        
+        allowed = (
+            Status.QUEUED, Status.PROCESSING
+        ) if allow_processing else (Status.QUEUED,)
+
+        if task.status not in allowed:
+            return None
+        
         task.status = Status.PROCESSING
         task.started_at = started_at
         task.error = None
+
         await self.session.commit()
         await self.session.refresh(task)
+        
         return task
 
     async def save_result(

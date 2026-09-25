@@ -164,7 +164,8 @@ docker run --name postgres-dev \
   -p 5432:5432 \
   -d postgres
 ```
-
+### 7. Запустить flower
+celery -A src.worker.app:celery flower --port=5555
 
 Таблица task
 Хранение результата в таблице task_result:

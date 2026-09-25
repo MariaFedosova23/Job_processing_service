@@ -1,10 +1,8 @@
 import logging
 from typing import Callable
 from datetime import datetime, timezone
+from dataclasses import dataclass
 
-
-# from src.database import AsyncSessionLocal
-# from src.worker.dispatcher import enqueue_process_task
 from src.database.models.task import TaskDB
 from src.schemas.tasks import Status, TaskCreateSchema
 from src.database.repositories.task import TaskRepository
@@ -18,7 +16,13 @@ from src.services.validator_task import (
 )
 
 logger = logging.getLogger('job_processing_service')
-EnqueueFn = Callable[[int], None]
+EnqueueFn = Callable[[int], str]
+
+
+@dataclass(frozen=True)
+class StartProcessingResult:
+    task: TaskDB
+    celery_task_id: str
 
 
 class TaskService:
@@ -39,7 +43,7 @@ class TaskService:
         )
 
     async def get_or_raise(self, task_id: int) -> TaskDB:
-        task = await self.repo.get(task_id)
+        task = await self.repo.get_with_result(task_id)
         if task is None:
             logger.warning(
                 "Задача не найдена",
@@ -106,12 +110,12 @@ class TaskService:
 
         task = await self.repo.update_status(task, Status.QUEUED)
 
-        logger.info(
-            "Запущена обработка задачи: task_id=%s", task_id,
-            extra={"event": "task_processing_started", "task_id": task_id},
-        )
         try:
-            self._enqueue(task_id)
+            celery_task_id = self._enqueue(task_id)
+            logger.info(
+                "Запущена обработка задачи: task_id=%s", task_id,
+                extra={"event": "task_processing_started", "task_id": task_id},
+            )
         except Exception:
             logger.exception(
                 "Не удалось поставить задачу в очередь: task_id=%s", task_id,
@@ -119,7 +123,7 @@ class TaskService:
             )
             await self.repo.update_status(task, Status.NEW)
             raise
-        return task
+        return StartProcessingResult(task=task, celery_task_id=celery_task_id)
     
     async def begin_processing(self, task_id: int) -> TaskDB | None:
         task = await self.repo.mark_processing(
@@ -187,39 +191,3 @@ class TaskService:
             extra={"event": "task_processing_failed", "task_id": task_id},
         )
         return task
-
-    
-   
-    # @staticmethod
-    # async def process(task_id: int, delay: int) -> None:
-    #     await sleep(delay)
-    #     async with AsyncSessionLocal() as session:
-    #         repo = TaskRepository(session)
-    #         task = await repo.get(task_id)
-    #         if task is None:
-    #             logger.warning(
-    #                 "Задача не найдена во время обработки: task_id=%s",
-    #                 task_id,
-    #                 extra={"event": "task_not_found", "task_id": task_id},
-    #             )
-    #             return
-    #         try:
-    #             await repo.update_status(task, Status.DONE)
-    #             logger.info(
-    #                 "Задача обработана: task_id=%s",
-    #                 task_id,
-    #                 extra={
-    #                     "event": "task_processing_done",
-    #                     "task_id": task_id,
-    #                 },
-    #             )
-    #         except Exception:
-    #             logger.exception(
-    #                 "Ошибка при фоновой обработке: task_id=%s",
-    #                 task_id,
-    #                 extra={
-    #                     "event": "task_processing_failed",
-    #                     "task_id": task_id,
-    #                 },
-    #             )
-               

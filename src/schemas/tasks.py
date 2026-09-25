@@ -10,7 +10,7 @@ from src.constants import (
 from src.enums import Status
 
 
-
+# input data
 
 class TaskCreateSchema(BaseModel):
 
@@ -35,13 +35,45 @@ class TaskStatusSchema(BaseModel):
     status: Status = Status.NEW
 
 
-class ShortResponseSchema(TaskStatusSchema):
+# output data
+
+class TaskResultSchema(BaseModel):
+    """Вложенная схема для result."""
+    original_length: int
+    word_count: int
+    processed_at: datetime
+
+class TaskShortSchema(BaseModel):
     id: int
+    status: Status
 
 
-class TaskResponseSchema(TaskCreateSchema, ShortResponseSchema):
+class TaskListSchema(BaseModel):
+    """Элемент списка GET /tasks."""
+    id: int
+    external_id: str
+    title: str
+    priority: int
+    status: Status
     created_at: datetime
-    updated_at: datetime
 
-class TaskResponseProcessSchema(ShortResponseSchema):
+class TaskDetailSchema(TaskListSchema):
+    pass
+
+class TaskDetailStateSchema(BaseModel):
+    """Детальный ответ: GET /tasks/{id}, PATCH, process."""
+    id: int
+    status: Status
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    result: TaskResultSchema | None
+    error: str | None
+
+class TaskResponseProcessSchema(BaseModel):
+    id: int
+    status: Status
     celery_task_id: str
+
+
+

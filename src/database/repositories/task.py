@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models.task import TaskDB, TaskResultDB
@@ -10,6 +11,16 @@ from src.schemas.tasks import Status
 class TaskRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    async def get_with_result(self, task_id: int) -> TaskDB | None:
+        stmt = (
+            select(TaskDB).where(TaskDB.id == task_id).options(
+                selectinload(TaskDB.result)
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+    
 
     async def get(self, task_id: int) -> TaskDB | None:
         return await self.session.get(TaskDB, task_id)
@@ -153,12 +164,17 @@ class TaskRepository:
         if task is None:
             return None
 
-        self.session.add(TaskResultDB(
-            task_id=task_id,
-            original_length=original_length,
-            word_count=word_count,
-            processed_at=processed_at,
-        ))
+        existing = await self.session.execute(
+            select(TaskResultDB).where(TaskResultDB.task_id == task_id)
+        )
+        if existing.scalar_one_or_none() is None:
+            self.session.add(TaskResultDB(
+                task_id=task_id,
+                original_length=original_length,
+                word_count=word_count,
+                processed_at=processed_at,
+            ))
+
         task.status = Status.DONE
         task.finished_at = finished_at
         task.error = None

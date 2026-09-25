@@ -3,9 +3,14 @@ import logging
 from fastapi import Query, APIRouter
 
 from src.schemas.tasks import (
-    TaskCreateSchema, TaskResponseSchema,
-    ShortResponseSchema, TaskStatusSchema,
-    TaskResponseProcessSchema
+    TaskCreateSchema,
+    TaskStatusSchema,
+    TaskResultSchema,
+    TaskShortSchema,
+    TaskListSchema,
+    TaskDetailStateSchema,
+    TaskResponseProcessSchema,
+    TaskDetailSchema
 )
 from src.constants import (
     DEFAULT_LIMIT, DEFAULT_OFFSET,
@@ -14,10 +19,10 @@ from src.constants import (
     TASK_PRIORITY_LOW,
     
 )
-from src.api.v1.dependencies import TaskServiceDep, TaskServiceProcessDep
+from src.api.v1.dependencies import TaskServiceDep
 # from src.services.task_service import TaskService
 from src.enums import Status
-# from src.worker.tasks.tasks import process_task
+
 
 logger = logging.getLogger('job_processing_service')
 
@@ -26,7 +31,7 @@ router = APIRouter(prefix='/api/v1/tasks', tags=['Задания'])
 
 @router.get(
         path='',
-        response_model=list[TaskResponseSchema],
+        response_model=list[TaskListSchema],
         summary='Получить список заданий',
 )
 async def get_tasks(
@@ -39,7 +44,7 @@ async def get_tasks(
     ),
     limit: int = Query(DEFAULT_LIMIT, ge=MIN_LIMIT, le=MAX_LIMIT),
     offset: int = Query(DEFAULT_OFFSET, ge=MIN_OFFSET),
-) -> list[TaskResponseSchema]:
+) -> list[TaskListSchema]:
 
     return await service.list_tasks(
         status=status, priority=priority, limit=limit, offset=offset
@@ -48,38 +53,38 @@ async def get_tasks(
 
 @router.get(
         path='/{task_id}',
-        response_model=TaskResponseSchema,
+        response_model=TaskDetailStateSchema,
         summary='Получить задание',
 )
 async def get_task(
     service: TaskServiceDep,
     task_id: int
-) -> TaskResponseSchema:
+) -> TaskDetailSchema:
     return await service.get_or_raise(task_id)
 
 
 @router.post(
         path='',
-        response_model=ShortResponseSchema,
+        response_model=TaskShortSchema,
         summary='Создать задание',
 )
 async def create_task(
     service: TaskServiceDep,
     task: TaskCreateSchema
-) -> ShortResponseSchema:
+) -> TaskShortSchema:
     return await service.create(task)
 
     
 @router.patch(
         path='/{task_id}/status',
-        response_model=TaskResponseSchema,
+        response_model=TaskDetailSchema,
         summary='Изменить статус задание',
 )
 async def patch_status_of_task(
     payload: TaskStatusSchema,
     task_id: int,
     service: TaskServiceDep
-) -> TaskResponseSchema:
+) -> TaskDetailSchema:
     return await service.change_status(task_id, payload.status)
     
    
@@ -98,14 +103,18 @@ async def delete_task(
 @router.post(
     '/{task_id}/process',
     summary='Обработка задания',
-    response_model=ShortResponseSchema
+    response_model=TaskResponseProcessSchema
 )
 async def process_task(
     task_id: int,
     service: TaskServiceDep,
 ):
-    return await service.start_processing(task_id)
-
+    result = await service.start_processing(task_id)
+    return TaskResponseProcessSchema(
+        id=result.task.id,
+        status=result.task.status,
+        celery_task_id=result.celery_task_id,
+    )
 
 
 

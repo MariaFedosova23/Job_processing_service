@@ -26,7 +26,7 @@ from src.enums import Status
 
 logger = logging.getLogger('job_processing_service')
 
-router = APIRouter(prefix='/api/v1/tasks', tags=['Задания'])
+router = APIRouter(prefix='/api/v1/tasks', tags=['tasks'])
 
 
 @router.get(

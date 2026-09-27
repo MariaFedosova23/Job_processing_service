@@ -4,9 +4,11 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services.task_service import TaskService
+from src.services.health_service import HealthService
 from src.database.repositories.task import TaskRepository
 from src.database import get_db
 from src.worker.dispatcher import enqueue_process_task
+from src.database.repositories.health import HealthRepository
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
@@ -26,13 +28,15 @@ def get_task_service(repo: TaskRepoDep) -> TaskService:
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
 
 
-# async def get_task_process_service(
-#     session: AsyncSession = Depends(get_db),
-# ) -> TaskService:
-#     repo = TaskRepository(session)
-#     return TaskService(repo, enqueue=enqueue_process_task)
+def get_health_repository(db: SessionDep) -> HealthRepository:
+    return HealthRepository(session=db)
 
 
-# TaskServiceProcessDep = Annotated[
-#     TaskService, Depends(get_task_process_service)
-# ]
+HealthRepoDep = Annotated[HealthRepository, Depends(get_health_repository)]
+
+
+def get_health_service(repo: HealthRepoDep) -> HealthService:
+    return HealthService(repo=repo)
+
+
+HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]

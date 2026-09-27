@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models.task import TaskDB, TaskResultDB
-from src.schemas.tasks import Status
+from src.enums import Status
 
 
 class TaskRepository:
@@ -21,7 +21,6 @@ class TaskRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
     
-
     async def get(self, task_id: int) -> TaskDB | None:
         return await self.session.get(TaskDB, task_id)
 
@@ -103,6 +102,9 @@ class TaskRepository:
         task = await self.session.get(TaskDB, task_id)
         if task is None:
             return None
+        if task.status == Status.Cancelled:
+            return
+        
         result = TaskResultDB(
             task_id=task_id,
             original_length=original_length,
@@ -174,6 +176,8 @@ class TaskRepository:
         task = await self.session.get(TaskDB, task_id)
         if task is None:
             return None
+        if task.status == Status.CANCELLED:
+            return
 
         existing = await self.session.execute(
             select(TaskResultDB).where(TaskResultDB.task_id == task_id)

@@ -116,5 +116,31 @@ async def process_task(
         celery_task_id=result.celery_task_id,
     )
 
+@router.post(
+    'tasks/{task_id}/retry',
+    summary='Повторный запуск ошибочного задания',
+    response_model=TaskResponseProcessSchema
+)
+async def retry_process_task(
+    task_id: int,
+    service: TaskServiceDep,
+):
+    result = await service.retry_task(task_id)
+    return TaskResponseProcessSchema(
+        id=result.task.id,
+        status=result.task.status,
+        celery_task_id=result.celery_task_id,
+    )
 
 
+@router.post(
+    'tasks/{task_id}/cancel',
+    summary='отмена выполнения обрабоки задания',
+    response_model=TaskDetailSchema
+)
+async def cancel_process_task(
+    task_id: int,
+    service: TaskServiceDep,
+):
+    result = await service.cancel_task(task_id)
+    return result

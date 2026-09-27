@@ -61,11 +61,12 @@ async def process_task_async(
         await asyncio.sleep(10)
         text = task.text
     try:
-        found = [word for word in FORBIDDEN_WORD_IN_TEXT if word in text.lower()]
+        found = [
+            word for word in FORBIDDEN_WORD_IN_TEXT if word in text.lower()
+        ]
         if found:
             raise ForbiddenWordsError(found)
            
-
         original_length = len(text)
         word_count = len(text.split())
         
@@ -84,7 +85,9 @@ async def process_task_async(
         if is_final_attempt:
             logger.exception(
                 'Исчерпаны попытки обработки: task_id=%s', task_id,
-                extra={'event': 'task_retries_retries_exhausted', 'task_id': task_id},
+                extra={
+                    'event': 'task_retries_retries_exhausted', 'task_id': task_id
+                },
             )
             async with get_session() as session:
                 service = TaskService(TaskRepository(session))
@@ -99,7 +102,10 @@ async def process_task_async(
         logger.warning(
             "Бизнес-ошибка обработки: task_id=%s, error=%s",
             task_id, exc,
-            extra={"event": "task_processing_business_error", "task_id": task_id},
+            extra={
+                "event": "task_processing_business_error",
+                "task_id": task_id
+            },
         )
         async with get_session() as session:
             service = TaskService(
@@ -111,7 +117,9 @@ async def process_task_async(
         logger.exception(
             "Непредвиденная ошибка обработки: task_id=%s",
             task_id,
-            extra={"event": "task_processing_unexpected_error", "task_id": task_id},
+            extra={
+                "event": "task_processing_unexpected_error", "task_id": task_id
+            },
         )
         async with get_session() as session:
             service = TaskService(
@@ -121,4 +129,3 @@ async def process_task_async(
                 task_id,
                 error=f'Внутренняя ошибка: {type(exc).__name__}',
             )
-        

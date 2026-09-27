@@ -9,6 +9,7 @@ from src.services.exceptions import (
     InvalidStatusTransitionError,
     TaskCannotBeProcessedError,
     TaskNotFoundError,
+    TaskCannotBeCancelledError,
 )
 
 logger = logging.getLogger("job_processing_service")
@@ -61,6 +62,20 @@ async def cannot_process_handler(
     return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
+async def cannot_cancell_handler(
+    request: Request, exc: TaskCannotBeCancelledError,
+):
+    logger.warning(
+        "Задачу нельзя обработать",
+        extra={
+            "event": "task_cannot_be_cancelled",
+            "task_id": exc.task_id,
+            "status": exc.status,
+        },
+    )
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
 async def domain_error_handler(request: Request, exc: DomainError):
     logger.warning(
         "Доменная ошибка",
@@ -81,4 +96,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         TaskCannotBeProcessedError, cannot_process_handler,
     )
+    app.add_exception_handler(
+            TaskCannotBeCancelledError, cannot_cancell_handler,
+        )
     app.add_exception_handler(DomainError, domain_error_handler)

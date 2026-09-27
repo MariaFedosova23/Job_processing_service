@@ -12,7 +12,9 @@ from src.services.exceptions import (
 )
 from src.services.validator_task import (
     validate_status_transition,
-    validate_task_can_be_processed
+    validate_task_can_be_processed,
+    validate_task_can_be_retry,
+    validate_task_can_be_canclled,
 )
 
 logger = logging.getLogger('job_processing_service')
@@ -126,11 +128,11 @@ class TaskService:
         return StartProcessingResult(task=task, celery_task_id=celery_task_id)
     
     async def begin_processing(
-            self,
-            task_id: int,
-            *,
-            allow_processing: bool = False,
-        ) -> TaskDB | None:
+        self,
+        task_id: int,
+        *,
+        allow_processing: bool = False,
+    ) -> TaskDB | None:
         task = await self.repo.mark_processing(
             task_id,
             started_at=datetime.now(timezone.utc),
@@ -196,4 +198,32 @@ class TaskService:
             "Обработка упала: task_id=%s, error=%s", task_id, error,
             extra={"event": "task_processing_failed", "task_id": task_id},
         )
+        return task
+
+    async def retry_task(self, task_id) -> TaskDB:
+        task = await self.get_or_raise(task_id)
+        validate_task_can_be_retry(task_id, task.status)
+
+        task = await self.repo.update_status(task, Status.QUEUED)
+
+        try:
+            celery_task_id = self._enqueue(task_id)
+            logger.info(
+                "Запущена обработка задачи: task_id=%s", task_id,
+                extra={"event": "task_processing_retried", "task_id": task_id},
+            )
+        except Exception:
+            logger.exception(
+                "Не удалось поставить задачу в очередь: task_id=%s", task_id,
+                extra={"event": "task_enqueue_failed", "task_id": task_id},
+            )
+            await self.repo.update_status(task, Status.ERROR)
+            raise
+        return StartProcessingResult(task=task, celery_task_id=celery_task_id)
+
+    async def cancel_task(self, task_id) -> TaskDB:
+        task = await self.get_or_raise(task_id)
+        validate_task_can_be_canclled(task_id, task.status)
+
+        task = await self.repo.update_status(task, Status.CANCELLED)
         return task

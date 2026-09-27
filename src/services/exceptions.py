@@ -22,14 +22,27 @@ class InvalidStatusTransitionError(DomainError):
         self.old_status = old_status
         self.new_status = new_status
         super().__init__(
-            f"Недопустимый переход статуса задачи {task_id}: {old_status} -> {new_status}"
+            f'Недопустимый переход статуса задачи {task_id}: '
+            f'{old_status} -> {new_status}'
         )
 
 
 class TaskCannotBeProcessedError(DomainError):
     def __init__(self, task_id: int, status: str) -> None:
+        self.task_id = task_id
         self.status = status
-        super().__init__(f"Задание задачи {task_id} в статусе '{status}' нельзя обработать")
+        super().__init__(
+            f'Задачу {task_id} в статусе {status} нельзя обработать'
+        )
+
+
+class TaskCannotBeCancelledError(DomainError):
+    def __init__(self, task_id: int, status: str) -> None:
+        self.task_id = task_id
+        self.status = status
+        super().__init__(
+            f'Задачу {task_id} в статусе {status} нельзя отменить'
+        )
 
 
 class TaskProcessingError(Exception):

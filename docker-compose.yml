@@ -1,50 +1,66 @@
-# services:
-#   db:
-#     image: postgres:16-alpine
-#     environment:
-#       POSTGRES_USER: job_user
-#       POSTGRES_PASSWORD: job_password
-#       POSTGRES_DB: job_db
-#     ports:
-#       - '5432:5432'
-#     volumes:
-#       - pgdata:/var/lib/postgresql/data
-#     healthcheck:
-#       test: ['CMD-SHELL', 'pg_isready -U job_user -d job_db']
-#       interval: 5s
-#       timeout: 5s
-#       retries: 5
 
-#   app:
-#     build: .
-#     ports:
-#       - '8000:8000'
-#     environment:
-#       DATABASE_URL: postgresql+asyncpg://job_user:job_password@db:5432/job_db
-#     depends_on:
-#       db:
-#         condition: service_healthy
-#     volumes:
-#       - ./logs:/app/logs
-
-# volumes:
-#   pgdata:
-
-# Создай файл docker-compose.yml с таким содержимым:
-version: '3.8'
 services:
-  db:
-    image: postgres:15-alpine
-    container_name: job_processing_db
-    restart: always
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: job_processing_service
+  api:
+    build: .
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
-      - "5433:5432"  # Пробрасываем порт 5433 (как у тебя в ошибке), внутри контейнера всегда 5432
+      - "8000:8000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: celery -A src.worker.app worker --loglevel=info --pool=threads
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
-  pgdata:
+  pg_data:

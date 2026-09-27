@@ -1,7 +1,10 @@
 import os
 from collections.abc import AsyncGenerator
 
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
+
+# load_dotenv()
+
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
@@ -12,12 +15,10 @@ from sqlalchemy.pool import NullPool
 from contextlib import asynccontextmanager
 
 
-load_dotenv()
-
 SQLALCHEMY_DATABASE_URL = os.getenv('DATABASE_URL')
 
 if not SQLALCHEMY_DATABASE_URL:
-    raise ValueError("SQLALCHEMY_DATABASE_URL не установлена!")
+    raise ValueError('Переменная окружения DATABASE_URL не найдена!')
 
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,

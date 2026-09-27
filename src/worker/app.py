@@ -9,7 +9,6 @@ from src.worker.config import (
     ENABLE_UTC,
     RESULT_BACKEND,
     RESULT_SERIALIZER,
-    # TASK_ROUTES,
     TASK_SERIALIZER,
     TIMEZONE,
 )
@@ -29,7 +28,6 @@ celery.conf.update(
     enable_utc=ENABLE_UTC,
     task_acks_late=True,
     result_expires=3600
-    # task_routes=TASK_ROUTES,
 )
 
 
@@ -41,6 +39,6 @@ def init_worker_process(**kwargs) -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(engine_worker.dispose())
-    except:
+    except Exception:
         pass
     

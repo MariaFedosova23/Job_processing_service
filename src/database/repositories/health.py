@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('job_processing_service')
 
 class HealthRepository:
     def __init__(self, session: AsyncSession):

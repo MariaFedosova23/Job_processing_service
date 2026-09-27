@@ -134,7 +134,6 @@ class TaskRepository:
         await self.session.refresh(task)
         return task
 
-
     async def mark_failed(
         self,
         task_id: int,

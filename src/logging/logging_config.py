@@ -26,7 +26,7 @@ LOGGING_CONFIG = {
 
     'filters': {
         'default_fields': {
-            '()': 'src.core.logging_filters.DefaultFieldsFilter',
+            '()': 'src.logging.logging_filters.DefaultFieldsFilter',
         },
     },
 

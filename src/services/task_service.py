@@ -115,13 +115,14 @@ class TaskService:
         try:
             celery_task_id = self._enqueue(task_id)
             logger.info(
-                "Запущена обработка задачи: task_id=%s", task_id,
-                extra={"event": "task_processing_started", "task_id": task_id},
+                'Задача поставлена в очередь: task_id=%s, celery_task_id=%s',
+                task_id, celery_task_id,
+                extra={'event': 'task_processing_started', 'task_id': task_id},
             )
         except Exception:
             logger.exception(
-                "Не удалось поставить задачу в очередь: task_id=%s", task_id,
-                extra={"event": "task_enqueue_failed", "task_id": task_id},
+                'Не удалось поставить задачу в очередь: task_id=%s', task_id,
+                extra={'event': 'task_enqueue_failed', 'task_id': task_id},
             )
             await self.repo.update_status(task, Status.NEW)
             raise

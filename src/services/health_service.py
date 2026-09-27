@@ -1,4 +1,3 @@
-# src/services/health_service.py
 import os
 import logging
 
@@ -7,7 +6,7 @@ import redis
 from src.database.repositories.health import HealthRepository
 from src.constants import SOCKET_TIMEOUT
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('job_processing_service')
 
 
 class HealthService:

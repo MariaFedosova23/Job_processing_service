@@ -1,14 +1,11 @@
 import logging
 import asyncio
-from datetime import datetime, timezone
-
 
 from sqlalchemy.exc import OperationalError
+
 from src.worker.app import celery
 from src.database.database import get_session
-from src.database.models.task import TaskDB, TaskResultDB
 from src.database.repositories.task import TaskRepository
-from src.enums import Status
 from src.constants import (
     MAX_TRIES,
     RETRY_BACKOFF_MAX,
@@ -33,10 +30,12 @@ logger = logging.getLogger('job_processing_service')
 )
 def process_task(self, task_id: int) -> None:
     is_final_attempt = self.request.retries >= self.max_retries
+    celery_task_id = self.request.id
 
     asyncio.run(
         process_task_async(
             task_id,
+            celery_task_id=celery_task_id,
             attempt=self.request.retries,
             is_final_attempt=is_final_attempt,
         )
@@ -45,9 +44,15 @@ def process_task(self, task_id: int) -> None:
 
 async def process_task_async(
         task_id: int,
+        celery_task_id: str,
         attempt: int = 0,
         is_final_attempt: bool = False,
 ) -> None:
+    logger.info(
+        "Начало обработки задачи: task_id=%s, celery_task_id=%s",
+        task_id, celery_task_id,
+        extra={'event': 'task_processing_started', 'task_id': task_id},
+    )
     await asyncio.sleep(10)
     async with get_session() as session:
         service = TaskService(
@@ -81,19 +86,25 @@ async def process_task_async(
                 original_length=original_length,
                 word_count=word_count,
             )
+        logger.info(
+            "Обработка завершена успешно: task_id=%s, celery_task_id=%s",
+            task_id, celery_task_id,
+            extra={'event': 'task_processing_done', 'task_id': task_id},
+        )
     except OperationalError:
         if is_final_attempt:
             logger.exception(
                 'Исчерпаны попытки обработки: task_id=%s', task_id,
                 extra={
-                    'event': 'task_retries_retries_exhausted', 'task_id': task_id
+                    'event': 'task_retries_retries_exhausted',
+                    'task_id': task_id
                 },
             )
             async with get_session() as session:
                 service = TaskService(TaskRepository(session))
                 await service.fail_processing(
                     task_id,
-                    error=f"Не удалось обработать после {attempt + 1} попыток",
+                    error=f'Не удалось обработать после {attempt + 1} попыток',
                 )
             return None
         raise
@@ -115,10 +126,10 @@ async def process_task_async(
 
     except Exception as exc:
         logger.exception(
-            "Непредвиденная ошибка обработки: task_id=%s",
-            task_id,
+            'Непредвиденная ошибка обработки: task_id=%s, celery_task_id=%s',
+            task_id, celery_task_id,
             extra={
-                "event": "task_processing_unexpected_error", "task_id": task_id
+                'event': 'task_processing_unexpected_error', 'task_id': task_id
             },
         )
         async with get_session() as session:

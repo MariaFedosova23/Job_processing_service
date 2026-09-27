@@ -6,8 +6,10 @@ from fastapi import FastAPI
 from src.api.v1.exception_handlers import register_exception_handlers
 from src.api import main_router
 from src.api.health import router as health_router
+from src.logging.logging_config import setup_logging
 
-logger = logging.getLogger('job_processing_service')
+setup_logging()
+
 app = FastAPI(title='Job Processing Service')
 app.include_router(main_router)
 app.include_router(health_router)

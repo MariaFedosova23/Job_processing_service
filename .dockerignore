@@ -23,4 +23,4 @@ README.md
 docker-compose.yml
 Dockerfile
 .dockerignore
-pyproject.toml
+!pyproject.toml

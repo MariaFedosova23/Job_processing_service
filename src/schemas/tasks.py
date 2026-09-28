@@ -51,6 +51,7 @@ class TaskShortSchema(BaseModel):
 class TaskListSchema(BaseModel):
     """Элемент списка GET /tasks."""
     id: int
+    text: str
     external_id: str
     title: str
     priority: int
@@ -60,11 +61,9 @@ class TaskListSchema(BaseModel):
 class TaskDetailSchema(TaskListSchema):
     pass
 
-class TaskDetailStateSchema(BaseModel):
+class TaskDetailStateSchema(TaskDetailSchema):
     """Детальный ответ: GET /tasks/{id}, PATCH, process."""
-    id: int
-    status: Status
-    created_at: datetime
+
     started_at: datetime | None
     finished_at: datetime | None
     result: TaskResultSchema | None

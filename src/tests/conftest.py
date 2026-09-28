@@ -1,4 +1,3 @@
-from dotenv import load_dotenv
 import logging
 import os
 import sys
@@ -14,11 +13,10 @@ from sqlalchemy.ext.asyncio import (
 from src.database import Base, get_db
 from src.main import app
 
-load_dotenv()
 
-TEST_DATABASE_URL = os.getenv('TEST_DATABASE_URL')
-if not TEST_DATABASE_URL:
-    raise ValueError('TEST_DATABASE_URL не установлена в .env')
+DATABASE_URL = os.getenv('TEST_DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError('DATABASE_URL не установлена в .env')
 
 logger = logging.getLogger('job_processing_service')
 
@@ -28,7 +26,7 @@ if sys.platform == 'win32':
 
 @pytest_asyncio.fixture(scope='session')
 async def engine():
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    engine = create_async_engine(DATABASE_URL, echo=False)
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)

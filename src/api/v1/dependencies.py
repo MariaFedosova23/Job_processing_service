@@ -11,6 +11,7 @@ from src.worker.dispatcher import enqueue_process_task
 from src.database.repositories.health import HealthRepository
 
 
+
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
 
 

@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import (
 
 from src.database import Base, get_db
 from src.main import app
-
+from src.enums import Status
+from src.database.models.task import TaskDB
+from src.database.repositories.task import TaskRepository
+from src.api.v1.dependencies import get_task_service
+from src.services.task_service import TaskService
 
 DATABASE_URL = os.getenv('TEST_DATABASE_URL')
 if not DATABASE_URL:
@@ -73,3 +77,43 @@ async def client(db_session) -> AsyncClient:
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def task_factory(db_session: AsyncSession):
+    created_tasks = []
+
+    async def create_task(
+        *,
+        title: str = "Тестовая задача",
+        text: str = "Описание",
+        priority: int = 1,
+        external_id: str | None = None,
+        status: Status = Status.NEW,
+    ) -> TaskDB:
+        task = TaskDB(
+            title=title,
+            text=text,
+            priority=priority,
+            external_id=external_id or f"test-{len(created_tasks) + 1}",
+            status=status,
+        )
+        db_session.add(task)
+        await db_session.commit()
+        await db_session.refresh(task)
+        created_tasks.append(task)
+        return task
+
+    yield create_task
+
+@pytest_asyncio.fixture
+async def override_task_service(db_session):
+    def fake_enqueue(task_id: int) -> str:
+        return "celery-abc"
+
+    def override():
+        return TaskService(TaskRepository(db_session), enqueue=fake_enqueue)
+
+    app.dependency_overrides[get_task_service] = override
+    yield
+    app.dependency_overrides.pop(get_task_service, None)

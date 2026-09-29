@@ -22,7 +22,7 @@ from src.enums import Status
 
 
 class TaskDB(Base):
-    __tablename__ = "tasks"
+    __tablename__ = 'tasks'
     __table_args__ = (
         CheckConstraint(
             f'priority BETWEEN {TASK_PRIORITY_LOW} AND {TASK_PRIORITY_HIGH}',
@@ -83,6 +83,10 @@ class TaskDB(Base):
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    files: Mapped[list['FileDB']] = relationship(
+        back_populates='task',
+        cascade="all, delete-orphan"
+    )
     def __repr__(self) -> str:
         return f'<TaskDB id={self.id} status={self.status}>'
 

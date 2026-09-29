@@ -7,7 +7,7 @@ from src.services.task_service import TaskService
 from src.services.health_service import HealthService
 from src.database.repositories.task import TaskRepository
 from src.database import get_db
-from src.worker.dispatcher import enqueue_process_task
+from src.worker.dispatcher import enqueue_process_task, enequeu_get_file
 from src.database.repositories.health import HealthRepository
 
 

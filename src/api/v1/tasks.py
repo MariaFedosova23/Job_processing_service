@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import Query, APIRouter
+from fastapi import Query, APIRouter, UploadFile, File, HTTPException
 
 from src.schemas.tasks import (
     TaskCreateSchema,
@@ -21,6 +21,7 @@ from src.constants import (
 )
 from src.api.v1.dependencies import TaskServiceDep
 from src.enums import Status
+from src.schemas.file import FileResponse
 
 
 logger = logging.getLogger('job_processing_service')
@@ -143,3 +144,28 @@ async def cancel_process_task(
 ):
     result = await service.cancel_task(task_id)
     return result
+
+@router.post(
+    '/{task_id}/files',
+    summary='загрузка файла',
+    response_model=FileResponse
+)
+async def upload_file(
+    task_id: int,
+    service: TaskServiceDep,
+    file: UploadFile = File(...),
+):
+    try:
+        file_db = await service.upload_file(task_id, file)
+        return file_db
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception(
+            "Ошибка загрузки файла", extra={
+                "event": "file_upload_error", "task_id": task_id
+            }
+        )
+        raise HTTPException(
+            status_code=500, detail="Ошибка при загрузке файла"
+        )

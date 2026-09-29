@@ -37,3 +37,11 @@ MAX_TRIES=3
 FORBIDDEN_WORD_IN_TEXT = ('мат', 'спам')
 
 SOCKET_TIMEOUT = 2
+
+
+MAX_FILE_SIZE = 1024 * 1024 * 10
+
+ALLOWED_TYPES = {
+    'application/pdf', 'text/plain', 'image/png',
+    'image/jpeg',
+}

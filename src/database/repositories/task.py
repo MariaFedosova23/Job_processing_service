@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models.task import TaskDB, TaskResultDB
+from src.database.models.file import FileDB
 from src.enums import Status
 
 
@@ -196,6 +197,25 @@ class TaskRepository:
         await self.session.commit()
         # await self.session.refresh(task)
         return task
-        
+
+    async def create_file(
+        self,
+        task_id: int | None,
+        original_name: str,
+        internal_name: str,
+        mime_type: str,
+        size_bytes: int,
+    ) -> FileDB:
+        file_obj = FileDB(
+            task_id=task_id,
+            original_name=original_name,
+            internal_name=internal_name,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+        )
+        self.session.add(file_obj)
+        await self.session.commit()
+        await self.session.refresh(file_obj)
+        return file_obj
 
         

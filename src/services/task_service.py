@@ -1,9 +1,16 @@
+import os
+import shutil
+import uuid
+from pathlib import Path
 import logging
 from typing import Callable
 from datetime import datetime, timezone
 from dataclasses import dataclass
+from fastapi import UploadFile
+
 
 from src.database.models.task import TaskDB
+from src.database.models.file import FileDB
 from src.schemas.tasks import Status, TaskCreateSchema
 from src.database.repositories.task import TaskRepository
 from src.services.exceptions import (
@@ -17,6 +24,7 @@ from src.services.validator_task import (
     validate_task_can_be_canclled,
 )
 from src.worker.config import BROKER_URL
+from src.constants import ALLOWED_TYPES, MAX_FILE_SIZE
 
 logger = logging.getLogger('job_processing_service')
 EnqueueFn = Callable[[int], str]
@@ -233,3 +241,47 @@ class TaskService:
 
         task = await self.repo.update_status(task, Status.CANCELLED)
         return task
+
+    async def upload_file(
+        self,
+        task_id: int,
+        file: UploadFile,
+    ) -> FileDB:
+        # Проверка MIME
+        if file.content_type not in ALLOWED_TYPES:
+            raise ValueError(
+                f'Неподдерживаемый тип файла: {file.content_type}'
+            )
+
+        contents = await file.read()
+        size = len(contents)
+        if size > MAX_FILE_SIZE:
+            raise ValueError('Файл превышает лимит 10 МБ')
+        
+        upload_dir = os.getenv("UPLOAD_DIR", "/app/files")
+        Path(upload_dir).mkdir(parents=True, exist_ok=True)
+
+        suffix = Path(file.filename).suffix or ".bin"
+        internal_name = f"{uuid.uuid4().hex}{suffix}"
+       
+        final_path = Path(upload_dir) / internal_name
+        final_path.write_bytes(contents)
+   
+        # Создаём запись в БД
+        file_db = await self.repo.create_file(
+            task_id=task_id,
+            original_name=file.filename,
+            internal_name=internal_name,
+            mime_type=file.content_type,
+            size_bytes=size,
+        )
+
+        logger.info(
+            "Файл загружен: task_id=%s, file_id=%s, internal_name=%s",
+            task_id, file_db.id, internal_name,
+            extra={"event": "file_uploaded", "task_id": task_id, "file_id": file_db.id},
+        )
+        from src.worker.tasks.tasks import get_file
+        get_file.delay(task_id, internal_name)
+        
+        return file_db

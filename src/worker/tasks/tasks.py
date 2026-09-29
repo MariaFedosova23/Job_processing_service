@@ -1,6 +1,7 @@
 import logging
 import asyncio
-
+import os
+from pathlib import Path
 from sqlalchemy.exc import OperationalError
 
 from src.worker.app import celery
@@ -140,3 +141,29 @@ async def process_task_async(
                 task_id,
                 error=f'Внутренняя ошибка: {type(exc).__name__}',
             )
+
+
+@celery.task(
+    bind=True,
+    name='worker.get_file',
+    acks_late=True,
+    autoretry_for=(OperationalError,),
+    retry_backoff=True,
+    retry_backoff_max=RETRY_BACKOFF_MAX,
+    max_retries=MAX_TRIES,
+    retry_jitter=True
+)
+def get_file(self, task_id: int, internal_name: str) -> None:
+    upload_dir = os.getenv("UPLOAD_DIR", "/app/files")
+    file_path = Path(upload_dir) / internal_name
+    if not file_path.exists():
+        return {'status': 'failed', 'error': 'Файл не найден'}
+    try:
+        asyncio.sleep(1)  # обработка файла
+        logger.info(
+            "Воркер получил файл: task_id=%s, path=%s",
+            task_id, file_path,
+            extra={"event": "file_received_by_worker", "task_id": task_id},
+        )
+    except Exception as e:
+        return {'status': 'failed', 'error': str(e)}

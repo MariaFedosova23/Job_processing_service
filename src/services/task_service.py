@@ -16,6 +16,7 @@ from src.services.validator_task import (
     validate_task_can_be_retry,
     validate_task_can_be_canclled,
 )
+from src.worker.config import BROKER_URL
 
 logger = logging.getLogger('job_processing_service')
 EnqueueFn = Callable[[int], str]
@@ -114,6 +115,10 @@ class TaskService:
 
         try:
             celery_task_id = self._enqueue(task_id)
+            logger.info(
+                "Enqueued: task_id=%s, celery_task_id=%s, broker=%s",
+                task_id, celery_task_id, BROKER_URL,
+    )
             logger.info(
                 'Задача поставлена в очередь: task_id=%s, celery_task_id=%s',
                 task_id, celery_task_id,

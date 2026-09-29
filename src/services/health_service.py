@@ -1,6 +1,6 @@
 import os
 import logging
-
+import redis.asyncio as aioredis 
 import redis
 
 from src.database.repositories.health import HealthRepository
@@ -28,20 +28,22 @@ class HealthService:
         """Проверяет Redis через PING."""
         if not self.redis_url:
             return {'status': 'error', 'detail': 'REDIS_URL is not set'}
-
+        client = aioredis.from_url(
+            self.redis_url,
+            socket_timeout=SOCKET_TIMEOUT,
+            socket_connect_timeout=SOCKET_TIMEOUT,
+    )
         try:
-            r = redis.Redis.from_url(
-                self.redis_url,
-                socket_timeout=SOCKET_TIMEOUT,
-                socket_connect_timeout=SOCKET_TIMEOUT,
-            )
-            if r.ping():
+            
+            if client.ping():
                 return {'status': 'ok'}
-            else:
-                return {'status': 'error', 'detail': 'PING returned False'}
+            
+            return {'status': 'error', 'detail': 'PING returned False'}
         except Exception as e:
             logger.error(f"Redis check failed: {e}")
             return {"status": "error", "detail": str(e)}
+        finally:
+            await client.aclose()
 
     async def readiness_check(
             self

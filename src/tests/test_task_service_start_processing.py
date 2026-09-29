@@ -6,10 +6,12 @@ import redis
 from src.database.repositories.task import TaskRepository
 from src.services.task_service import TaskService, StartProcessingResult
 from src.enums import Status
-from src.services.exceptions import TaskNotFoundError, TaskCannotBeProcessedError
+from src.services.exceptions import (
+    TaskNotFoundError, TaskCannotBeProcessedError, TaskCannotBeRetryError
+)
 # from src.worker.tasks.tasks import process_task
 from src.services.task_service import TaskService
-from src.database.models.task import TaskDB
+from src.database.models.task import TaskDB, TaskResultDB
 # from src.api.v1.dependencies import get_task_service
 from src.main import app
 
@@ -129,8 +131,9 @@ async def test_update_status_persists_to_db(db_session):
     assert task.status == Status.QUEUED.value
 
 
+@pytest.mark.integration
 async def test_second_process_returns_409(
-        client, task_factory, override_task_service
+        client, task_factory
 ):
     task = await task_factory(status=Status.NEW)
   
@@ -141,4 +144,130 @@ async def test_second_process_returns_409(
     assert second.status_code == 409, second.text
 
 
-    
+
+@pytest.mark.integration
+async def test_success_processing(
+        client,
+        celery_worker,
+        task_factory
+    ):
+    task = await task_factory(status=Status.NEW)
+    task_id = task.id
+
+    result = await client.post(f"/api/v1/tasks/{task.id}/process")
+    assert result.status_code == 200, result.text
+
+    from sqlalchemy import select
+    from src.database.database import engine_worker
+
+    deadline = asyncio.get_event_loop().time() + 30
+    final_statuses = {Status.DONE, Status.ERROR}
+    status = error = None
+    while asyncio.get_event_loop().time() < deadline:
+        async with engine_worker.connect() as conn:
+            row = (await conn.execute(
+                select(TaskDB.status, TaskDB.error).where(TaskDB.id == task_id)
+            )).one_or_none()
+        if row and row.status in final_statuses:
+            status, error = row.status, row.error
+            break
+        await asyncio.sleep(0.1)
+
+    assert status == Status.DONE, f"status={status}, error={error}"
+    assert error is None
+
+    async with engine_worker.connect() as conn:
+        result_row = (await conn.execute(
+            select(TaskResultDB.word_count, TaskResultDB.original_length)
+            .where(TaskResultDB.task_id == task_id)
+        )).one_or_none()
+
+    assert result_row is not None
+    assert result_row.word_count == 1        # "Описание"
+    assert result_row.original_length == len("Описание")
+
+
+@pytest.mark.integration
+async def test_process_error(
+    client,
+    celery_worker,
+    task_factory
+):
+    task = await task_factory(status=Status.NEW, text='мат спам')
+    task_id = task.id
+
+    result = await client.post(f"/api/v1/tasks/{task.id}/process")
+    assert result.status_code == 200, result.text
+
+    from sqlalchemy import select
+    from src.database.database import engine_worker
+
+    deadline = asyncio.get_event_loop().time() + 30
+    final_statuses = {Status.DONE, Status.ERROR}
+    status = error = None
+    while asyncio.get_event_loop().time() < deadline:
+        async with engine_worker.connect() as conn:
+            row = (await conn.execute(
+                select(TaskDB.status, TaskDB.error).where(TaskDB.id == task_id)
+            )).one_or_none()
+        if row and row.status in final_statuses:
+            status, error = row.status, row.error
+            break
+        await asyncio.sleep(0.1)
+
+    assert status == Status.ERROR, f"status={status}, error={error}"
+    assert error is not None
+
+
+@pytest.mark.integration
+async def test_process_retry(
+    client,
+    celery_worker,
+    task_factory
+):
+    task = await task_factory(
+        status=Status.ERROR, text='without forbidden words'
+    )
+    task_id = task.id
+
+    result = await client.post(f"/api/v1/tasks/{task.id}/retry")
+    assert result.status_code == 200, result.text
+    body = result.json()
+    assert body["id"] == task_id
+    assert body["status"] == Status.QUEUED.value
+    assert body["celery_task_id"] is not None
+    from sqlalchemy import select
+    from src.database.database import engine_worker
+
+    deadline = asyncio.get_event_loop().time() + 30
+    final_statuses = {Status.DONE, Status.ERROR}
+    status = error = None
+    while asyncio.get_event_loop().time() < deadline:
+        async with engine_worker.connect() as conn:
+            row = (await conn.execute(
+                select(TaskDB.status, TaskDB.error).where(TaskDB.id == task_id)
+            )).one_or_none()
+        if row and row.status in final_statuses:
+            status, error = row.status, row.error
+            break
+        await asyncio.sleep(0.1)
+
+    assert status == Status.DONE, f"status={status}, error={error}"
+    assert error is None
+
+
+async def test_retry_success_task(
+
+    service: TaskService,
+    repo: AsyncMock,
+    task_new: MagicMock,
+    enqueue_mock
+):
+    task_new.status = Status.DONE
+    repo.get_with_result.return_value = task_new
+    with pytest.raises(TaskCannotBeRetryError):
+        await service.retry_task(task_id=1)
+
+    enqueue_mock.assert_not_called()
+    repo.update_status.assert_not_awaited()
+  

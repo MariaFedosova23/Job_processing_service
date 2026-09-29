@@ -131,7 +131,7 @@ class TaskRepository:
         task.finished_at = finished_at
         task.error = None
         await self.session.commit()
-        await self.session.refresh(task)
+        # await self.session.refresh(task)
         return task
 
     async def mark_failed(
@@ -154,7 +154,7 @@ class TaskRepository:
         task.error = error
         task.finished_at = finished_at
         await self.session.commit()
-        await self.session.refresh(task)
+        # await self.session.refresh(task)
         return task
 
 
@@ -194,7 +194,7 @@ class TaskRepository:
         task.error = None
 
         await self.session.commit()
-        await self.session.refresh(task)
+        # await self.session.refresh(task)
         return task
         
 

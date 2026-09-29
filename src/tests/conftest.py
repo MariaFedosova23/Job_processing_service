@@ -1,7 +1,11 @@
-import logging
 import os
-import sys
-import asyncio
+
+os.environ['DATABASE_URL'] = os.getenv('TEST_DATABASE_URL')
+os.environ['REDIS_URL'] = os.getenv('TEST_REDIS_URL', 'redis://redis:6379/2')
+os.environ['CELERY_RESULT_BACKEND'] = os.getenv('TEST_REDIS_URL', 'redis://redis:6379/3')
+
+import logging
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
@@ -9,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncSession,
 )
+from celery.contrib.testing.worker import start_worker
 
 from src.database import Base, get_db
 from src.main import app
@@ -17,6 +22,8 @@ from src.database.models.task import TaskDB
 from src.database.repositories.task import TaskRepository
 from src.api.v1.dependencies import get_task_service
 from src.services.task_service import TaskService
+from src.worker.app import celery
+
 
 DATABASE_URL = os.getenv('TEST_DATABASE_URL')
 if not DATABASE_URL:
@@ -24,8 +31,12 @@ if not DATABASE_URL:
 
 logger = logging.getLogger('job_processing_service')
 
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# if sys.platform == 'win32':
+#     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+@pytest.fixture(scope="session")
+def celery_pool():
+    # На Windows prefork недоступен
+    return "prefork" 
 
 
 @pytest_asyncio.fixture(scope='session')
@@ -106,6 +117,9 @@ async def task_factory(db_session: AsyncSession):
 
     yield create_task
 
+
+
+
 @pytest_asyncio.fixture
 async def override_task_service(db_session):
     def fake_enqueue(task_id: int) -> str:
@@ -117,3 +131,33 @@ async def override_task_service(db_session):
     app.dependency_overrides[get_task_service] = override
     yield
     app.dependency_overrides.pop(get_task_service, None)
+
+
+@pytest.fixture(scope="session")
+def redis_url():
+    # Redis поднят сервисом redis в docker-compose, доступен по имени сервиса
+    url =  os.getenv("REDIS_URL", "redis://redis:6379/0")
+    return url.rsplit("/", 1)[0]
+
+
+@pytest.fixture(scope="session")
+def celery_app_test(redis_url):
+    celery.conf.update(
+        broker_url=f"{redis_url}/2",
+        result_backend=f"{redis_url}/3",
+        task_always_eager=False,
+        task_store_eager_result=False,
+    )
+    return celery
+
+
+@pytest.fixture(scope="session")
+def celery_worker(celery_app_test, celery_pool):
+    with start_worker(
+        celery_app_test,
+        pool=celery_pool,
+        concurrency=1,
+        perform_ping_check=False,
+        loglevel="INFO",
+    ):
+        yield

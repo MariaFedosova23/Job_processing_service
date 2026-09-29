@@ -116,7 +116,7 @@ async def process_task(
     )
 
 @router.post(
-    'tasks/{task_id}/retry',
+    '/{task_id}/retry',
     summary='Повторный запуск ошибочного задания',
     response_model=TaskResponseProcessSchema
 )
@@ -133,7 +133,7 @@ async def retry_process_task(
 
 
 @router.post(
-    'tasks/{task_id}/cancel',
+    '/{task_id}/cancel',
     summary='отмена выполнения обрабоки задания',
     response_model=TaskDetailSchema
 )

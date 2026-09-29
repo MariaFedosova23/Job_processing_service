@@ -221,3 +221,16 @@ Retry не нужен, когда:
 Правильная формулировка:
 
     Не ретраить: валидационные (ValueError, TypeError), бизнес-ошибки (ForbiddenWordsError, TaskProcessingError), 4xx HTTP (400, 401, 403, 404, 422), IntegrityError от unique, ошибки парсинга, баги в коде (AttributeError, KeyError). Общий признак — при повторе результат тот же, состояние системы не изменится.
+
+
+
+    # Один тест, подробно, с логами Celery DEBUG
+docker compose --profile test run --rm tests \
+  pytest src/tests/test_task_service_start_processing.py::test_success_processing \
+  -vv -s --log-cli-level=DEBUG
+
+# Только интеграционные тесты (если есть маркер)
+docker compose --profile test run --rm tests pytest -m integration -vv -s
+
+# Все тесты, кроме медленных
+docker compose --profile test run --rm tests pytest -vv -s --durations=10

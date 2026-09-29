@@ -34,7 +34,13 @@ class TaskCannotBeProcessedError(DomainError):
         super().__init__(
             f'Задачу {task_id} в статусе {status} нельзя обработать'
         )
-
+class TaskCannotBeRetryError(DomainError):
+    def __init__(self, task_id: int, status: str) -> None:
+        self.task_id = task_id
+        self.status = status
+        super().__init__(
+            f'Задачу {task_id} в статусе {status} нельзя ретраить'
+        )
 
 class TaskCannotBeCancelledError(DomainError):
     def __init__(self, task_id: int, status: str) -> None:

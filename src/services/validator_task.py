@@ -4,7 +4,7 @@ from src.constants import ALLOWED_STATUS_TRANSITIONS
 from src.schemas.tasks import Status
 from src.services.exceptions import (
     InvalidStatusTransitionError, TaskCannotBeProcessedError,
-    TaskCannotBeCancelledError
+    TaskCannotBeCancelledError, TaskCannotBeRetryError
 )
 
 logger = logging.getLogger('job_processing_service')
@@ -46,7 +46,7 @@ def validate_task_can_be_retry(task_id: int, current_status: str) -> None:
             current_status,
             extra={'event': 'task_cannot_be_retied', 'task_id': task_id}
         )
-        raise TaskCannotBeProcessedError(task_id, current_status)
+        raise TaskCannotBeRetryError(task_id, current_status)
 
 
 def validate_task_can_be_canclled(task_id: int, current_status: str) -> None:

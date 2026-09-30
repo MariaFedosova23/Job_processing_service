@@ -177,14 +177,8 @@ cd Job_processing_service
 docker compose up -d --build
 ```
 
-### 4. Применить миграции
-```bash
-docker compose exec api alembic revision --autogenerate -m "add files table"
-```
-```bash
-docker compose exec api alembic upgrade head
-```
-### 5. Запустить тестовые данные(опционально)
+
+### 4. Запустить тестовые данные(опционально)
 ```bash
 docker compose --profile seed run --rm seed
 ```
@@ -276,12 +270,4 @@ docker compose exec postgres psql -U user -d job_processing_service -c 'CREATE D
 ```bash
 docker compose run --rm tests 
   
-```
-### Только интеграционные тесты (если есть маркер)
-```bash
-docker compose --profile test run --rm tests pytest -m integration -vv -s
-```
-### Все тесты, кроме медленных
-```bash
-docker compose --profile test run --rm tests pytest -vv -s --durations=10
 ```

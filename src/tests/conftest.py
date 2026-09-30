@@ -31,8 +31,7 @@ if not DATABASE_URL:
 
 logger = logging.getLogger('job_processing_service')
 
-# if sys.platform == 'win32':
-#     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 @pytest.fixture(scope="session")
 def celery_pool():
     # На Windows prefork недоступен
@@ -135,7 +134,7 @@ async def override_task_service(db_session):
 
 @pytest.fixture(scope="session")
 def redis_url():
-    # Redis поднят сервисом redis в docker-compose, доступен по имени сервиса
+    
     url =  os.getenv("REDIS_URL", "redis://redis:6379/0")
     return url.rsplit("/", 1)[0]
 

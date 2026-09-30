@@ -168,11 +168,6 @@ class TaskRepository:
         processed_at: datetime,
         finished_at: datetime,
     ) -> TaskDB | None:
-        """
-        Атомарно: INSERT TaskResultDB + UPDATE TaskDB.status=DONE + finished_at.
-        Один commit → либо оба изменения применились, либо ни одно.
-        Это предпочтительный вариант для воркера.
-        """
         task = await self.session.get(TaskDB, task_id)
         if task is None:
             return None

@@ -1,7 +1,7 @@
 import os
 import logging
 import redis.asyncio as aioredis 
-import redis
+
 
 from src.database.repositories.health import HealthRepository
 from src.constants import SOCKET_TIMEOUT
@@ -62,11 +62,11 @@ class HealthService:
         redis_res = await self.check_redis()
         checks['redis'] = redis_res
 
-        # Общая логика: если все ok → ready, иначе not_ready
-        all_ok = all(c["status"] == "ok" for c in checks.values())
-        status = "ready" if all_ok else "not_ready"
+
+        all_ok = all(c["status"] == 'ok' for c in checks.values())
+        status = 'ready' if all_ok else 'not_ready'
 
         return {
-            "status": status,
-            "dependencies": checks,
+            'tatus': status,
+            'dependencies': checks,
         }

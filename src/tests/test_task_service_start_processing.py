@@ -1,19 +1,17 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 import asyncio
 import pytest
-from unittest.mock import patch
-import redis
+
+
 from src.database.repositories.task import TaskRepository
-from src.services.task_service import TaskService, StartProcessingResult
+from src.services.task_service import TaskService
 from src.enums import Status
 from src.services.exceptions import (
     TaskNotFoundError, TaskCannotBeProcessedError, TaskCannotBeRetryError
 )
-# from src.worker.tasks.tasks import process_task
 from src.services.task_service import TaskService
 from src.database.models.task import TaskDB, TaskResultDB
-# from src.api.v1.dependencies import get_task_service
-from src.main import app
+
 
 @pytest.fixture
 def repo():

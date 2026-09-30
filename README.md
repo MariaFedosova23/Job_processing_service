@@ -169,22 +169,23 @@ Retry срабатывает, когда таска:
 git clone <repo-url>
 cd Job_processing_service
 ```
+### 2. Cоздать .env
 
-### 2. Поднять контейнеры
+### 3. Поднять контейнеры
 
 ```bash
 docker compose up -d --build
 ```
 
-### 3. Применить миграции
+### 4. Применить миграции
 ```bash
 docker compose exec api alembic revision --autogenerate -m "add files table"
 ```
 ```bash
-docker compose exec app alembic upgrade head
+docker compose exec api alembic upgrade head
 ```
 
-### 4. Открыть Swagger
+### 5. Открыть Swagger
 
 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
@@ -264,6 +265,9 @@ celery -A src.worker.app:celery flower --port=5555
 ```
 
 ## 🧪 Запуск тестов
+Создать тестовую базу:
+docker compose exec postgres psql -U user -d job_processing_service -c 'CREATE DATABASE job_service_test'
+
 ```bash
 docker compose run --rm tests 
   

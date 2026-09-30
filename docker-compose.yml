@@ -11,11 +11,14 @@ services:
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
       UPLOAD_DIR: /app/files
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
     volumes:
+      - ./src:/app/src
       - ./logs:/app/logs
       - files_volume:/app/files
     restart: unless-stopped
@@ -34,11 +37,11 @@ services:
       redis:
         condition: service_started
     volumes:
+      - ./src:/app/src
       - ./logs:/app/logs
       - files_volume:/app/files
     restart: unless-stopped
-    profiles:
-      - prod
+
 
   postgres:
     image: postgres:15-alpine
@@ -68,6 +71,17 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  migrate:
+    build: .
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ./src:/app/src
 
   tests:
     build:

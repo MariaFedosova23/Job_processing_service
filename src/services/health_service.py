@@ -1,7 +1,7 @@
 import os
 import logging
 import redis.asyncio as aioredis 
-
+from typing import Any
 
 from src.database.repositories.health import HealthRepository
 from src.constants import SOCKET_TIMEOUT
@@ -18,13 +18,13 @@ class HealthService:
         self.repo = repo
         self.redis_url = redis_url or os.getenv('REDIS_URL')
 
-    async def check_postgres(self) -> dict[str, any]:
+    async def check_postgres(self) -> dict[str, Any]:
         """Проверяет соединение с PostgreSQL через лёгкий запрос SELECT 1."""
         if await self.repo.check_connection():
             return {'status': 'ok'}
         return {'status': 'error', 'detail': 'Cannot connect to PostgreSQL'}
 
-    async def check_redis(self) -> dict[str, any]:
+    async def check_redis(self) -> dict[str, Any]:
         """Проверяет Redis через PING."""
         if not self.redis_url:
             return {'status': 'error', 'detail': 'REDIS_URL is not set'}
@@ -67,6 +67,6 @@ class HealthService:
         status = 'ready' if all_ok else 'not_ready'
 
         return {
-            'tatus': status,
+            'status': status,
             'dependencies': checks,
         }

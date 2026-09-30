@@ -54,7 +54,6 @@ async def process_task_async(
         task_id, celery_task_id,
         extra={'event': 'task_processing_started', 'task_id': task_id},
     )
-    await asyncio.sleep(0.1)
     async with get_session() as session:
         service = TaskService(
             TaskRepository(session)
@@ -64,7 +63,6 @@ async def process_task_async(
         )
         if task is None:
             return
-        await asyncio.sleep(10)
         text = task.text
     try:
         found = [

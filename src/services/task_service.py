@@ -194,7 +194,7 @@ class TaskService:
     
     async def fail_processing(self, task_id: int, error: str) -> TaskDB | None:
         """
-        PROCESSING → ERROR + текст ошибки.
+        PROCESSING → ERROR
         """
         task = await self.repo.mark_failed(
             task_id,

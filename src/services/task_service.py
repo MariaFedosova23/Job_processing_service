@@ -247,6 +247,10 @@ class TaskService:
         task_id: int,
         file: UploadFile,
     ) -> FileDB:
+
+        task = await self.repo.get(task_id)
+        if task is None:
+            raise TaskNotFoundError(task_id)
         # Проверка MIME
         if file.content_type not in ALLOWED_TYPES:
             raise ValueError(

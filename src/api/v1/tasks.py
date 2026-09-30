@@ -155,17 +155,5 @@ async def upload_file(
     service: TaskServiceDep,
     file: UploadFile = File(...),
 ):
-    try:
-        file_db = await service.upload_file(task_id, file)
-        return file_db
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        logger.exception(
-            "Ошибка загрузки файла", extra={
-                "event": "file_upload_error", "task_id": task_id
-            }
-        )
-        raise HTTPException(
-            status_code=500, detail="Ошибка при загрузке файла"
-        )
+    file_db = await service.upload_file(task_id, file)
+    return file_db

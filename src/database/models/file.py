@@ -1,8 +1,8 @@
-from sqlalchemy import String, Integer, Enum, DateTime, ForeignKey
+from sqlalchemy import String, Integer, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, mapped_column
-from datetime import datetime
+
 from src.database import Base
-import uuid
+
 
 
 class FileDB(Base):

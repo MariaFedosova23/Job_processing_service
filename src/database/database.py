@@ -1,9 +1,7 @@
 import os
 from collections.abc import AsyncGenerator
 
-# from dotenv import load_dotenv
 
-# load_dotenv()
 
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.ext.asyncio import (

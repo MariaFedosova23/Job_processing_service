@@ -10,7 +10,7 @@ from src.constants import (
 from src.enums import Status
 
 
-# input data
+
 
 class TaskCreateSchema(BaseModel):
 
@@ -35,7 +35,6 @@ class TaskStatusSchema(BaseModel):
     status: Status = Status.NEW
 
 
-# output data
 
 class TaskResultSchema(BaseModel):
     """Вложенная схема для result."""

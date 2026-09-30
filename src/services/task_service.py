@@ -16,6 +16,8 @@ from src.database.repositories.task import TaskRepository
 from src.services.exceptions import (
     TaskNotFoundError,
     DuplicateExternalIdError,
+    TaskCannotBeProcessedError,
+    TaskCannotBeRetryError
 )
 from src.services.validator_task import (
     validate_status_transition,
@@ -23,6 +25,7 @@ from src.services.validator_task import (
     validate_task_can_be_retry,
     validate_task_can_be_canclled,
 )
+
 from src.worker.config import BROKER_URL
 from src.constants import ALLOWED_TYPES, MAX_FILE_SIZE
 
@@ -116,22 +119,28 @@ class TaskService:
         )
 
     async def start_processing(self, task_id: int) -> TaskDB:
-        task = await self.get_or_raise(task_id)
-        validate_task_can_be_processed(task_id, task.status)
+        """NEW -> QUEUED -> PROCESSING -> DONE."""
 
-        task = await self.repo.update_status(task, Status.QUEUED)
+        task = await self.repo.mark_queued_new_task(task_id)
 
+        if task is None:
+            existing = await self.repo.get(task_id)
+            if existing is None:
+                logger.warning(
+                    "Задача не найдена",
+                    extra={"event": "task_not_found", "task_id": task_id},
+                )
+                raise TaskNotFoundError(task_id)
+            logger.warning(
+                "Задание нельзя обработать: status=%s",
+                existing.status,
+                extra={"event": "task_processing_failed", "task_id": task_id},
+            )
+            raise TaskCannotBeProcessedError(task_id, existing.status)
+        
         try:
             celery_task_id = self._enqueue(task_id)
-            logger.info(
-                "Enqueued: task_id=%s, celery_task_id=%s, broker=%s",
-                task_id, celery_task_id, BROKER_URL,
-    )
-            logger.info(
-                'Задача поставлена в очередь: task_id=%s, celery_task_id=%s',
-                task_id, celery_task_id,
-                extra={'event': 'task_processing_started', 'task_id': task_id},
-            )
+        
         except Exception:
             logger.exception(
                 'Не удалось поставить задачу в очередь: task_id=%s', task_id,
@@ -139,7 +148,56 @@ class TaskService:
             )
             await self.repo.update_status(task, Status.NEW)
             raise
+
+        logger.info(
+            'Задача поставлена в очередь: task_id=%s, celery_task_id=%s',
+            task_id, celery_task_id,
+            extra={'event': 'task_processing_started', 'task_id': task_id},
+        )
         return StartProcessingResult(task=task, celery_task_id=celery_task_id)
+
+    
+    async def retry_task(self, task_id) -> TaskDB:
+        """ERROR -> QUEUED-> PROCESSING -> DONE/ERROR."""
+
+        task = await self.repo.mark_queued_error_task(task_id)
+        if task is None:
+            existing = await self.repo.get(task_id)
+            if existing is None:
+                logger.warning(
+                    "Задача не найдена",
+                    extra={"event": "task_not_found", "task_id": task_id},
+                )
+                raise TaskNotFoundError(task_id)
+            logger.warning(
+                "Задание нельзя обработать: status=%s",
+                existing.status,
+                extra={"event": "task_processing_failed", "task_id": task_id},
+            )
+            raise TaskCannotBeRetryError(task_id, existing.status)
+
+        try:
+            celery_task_id = self._enqueue(task_id)
+            
+        except Exception:
+            logger.exception(
+                "Не удалось поставить задачу в очередь: task_id=%s", task_id,
+                extra={"event": "task_enqueue_failed", "task_id": task_id},
+            )
+            await self.repo.update_status(task, Status.ERROR)
+            raise
+        logger.info(
+            "Запущена обработка задачи: task_id=%s", task_id,
+            extra={"event": "task_processing_retried", "task_id": task_id},
+        )
+        return StartProcessingResult(task=task, celery_task_id=celery_task_id)
+
+    async def cancel_task(self, task_id) -> TaskDB:
+        task = await self.get_or_raise(task_id)
+        validate_task_can_be_canclled(task_id, task.status)
+
+        task = await self.repo.update_status(task, Status.CANCELLED)
+        return task
     
     async def begin_processing(
         self,
@@ -165,6 +223,7 @@ class TaskService:
             extra={"event": "task_processing_begin", "task_id": task_id},
         )
         return task
+
 
     async def complete_processing(
         self,
@@ -214,33 +273,6 @@ class TaskService:
         )
         return task
 
-    async def retry_task(self, task_id) -> TaskDB:
-        task = await self.get_or_raise(task_id)
-        validate_task_can_be_retry(task_id, task.status)
-
-        task = await self.repo.update_status(task, Status.QUEUED)
-
-        try:
-            celery_task_id = self._enqueue(task_id)
-            logger.info(
-                "Запущена обработка задачи: task_id=%s", task_id,
-                extra={"event": "task_processing_retried", "task_id": task_id},
-            )
-        except Exception:
-            logger.exception(
-                "Не удалось поставить задачу в очередь: task_id=%s", task_id,
-                extra={"event": "task_enqueue_failed", "task_id": task_id},
-            )
-            await self.repo.update_status(task, Status.ERROR)
-            raise
-        return StartProcessingResult(task=task, celery_task_id=celery_task_id)
-
-    async def cancel_task(self, task_id) -> TaskDB:
-        task = await self.get_or_raise(task_id)
-        validate_task_can_be_canclled(task_id, task.status)
-
-        task = await self.repo.update_status(task, Status.CANCELLED)
-        return task
 
     async def upload_file(
         self,

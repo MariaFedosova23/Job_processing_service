@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,26 +71,61 @@ class TaskRepository:
         allow_processing: bool = False,
     ) -> TaskDB | None:
         
-        task = await self.session.get(TaskDB, task_id)
-
-        if task is None:
-            return None
-        
         allowed = (
             Status.QUEUED, Status.PROCESSING
         ) if allow_processing else (Status.QUEUED,)
 
-        if task.status not in allowed:
-            return None
-        
-        task.status = Status.PROCESSING
-        task.started_at = started_at
-        task.error = None
 
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.status.in_(allowed))
+            .values(
+                status=Status.PROCESSING,
+                started_at=started_at,
+                error=None,
+            )
+            .returning(TaskDB)
+        )
+        result = await self.session.execute(stmt)
+        task = result.scalar_one_or_none()
         await self.session.commit()
-        await self.session.refresh(task)
         
         return task
+    
+    async def mark_queued_new_task(self, task_id: int) -> TaskDB | None:
+        stmt = (
+            update(TaskDB)
+                .where(TaskDB.id == task_id)
+                .where(TaskDB.status == Status.NEW)
+                .values(
+                    status=Status.QUEUED,
+                    error=None,
+                )
+                .returning(TaskDB)
+        )
+        result = await self.session.execute(stmt)
+        task = result.scalar_one_or_none()
+        await self.session.commit()
+        return task
+
+    async def mark_queued_error_task(self, task_id: int) -> TaskDB | None:
+        stmt = (
+            update(TaskDB)
+                .where(TaskDB.id == task_id)
+                .where(TaskDB.status == Status.ERROR)
+                .values(
+                    status=Status.QUEUED,
+                    error=None,
+                )
+                .returning(TaskDB)
+        )
+        result = await self.session.execute(stmt)
+        task = result.scalar_one_or_none()
+        await self.session.commit()
+        return task
+        
+
 
     async def save_result(
         self,

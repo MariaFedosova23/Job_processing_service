@@ -83,6 +83,22 @@ services:
     volumes:
       - ./src:/app/src
 
+  seed:
+    build: .
+    command: python -m seed
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ./src:/app/src
+      - ./seed.py:/app/seed.py
+    profiles:
+      - seed
+
   tests:
     build:
       context: .

@@ -184,6 +184,11 @@ docker compose exec api alembic revision --autogenerate -m "add files table"
 ```bash
 docker compose exec api alembic upgrade head
 ```
+### 5. Запустить тестовые данные(опционально)
+```bash
+docker compose --profile seed run --rm seed
+```
+
 
 ### 5. Открыть Swagger
 

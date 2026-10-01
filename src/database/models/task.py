@@ -33,6 +33,11 @@ class TaskDB(Base):
             name="ck_tasks_status",
         ),
     )
+    owner_token: Mapped[str | None] = mapped_column(unique=True, nullable=True)
+    lease_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True)
+    )
+
 
     id: Mapped[int] = mapped_column(primary_key=True)
     external_id: Mapped[str] = mapped_column(String(

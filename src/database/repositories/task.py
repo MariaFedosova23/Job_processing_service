@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
@@ -67,10 +67,13 @@ class TaskRepository:
         self,
         task_id: int,
         *,
+        owner_token: str,
+        lease_seconds: int,
         started_at: datetime,
         allow_processing: bool = False,
     ) -> TaskDB | None:
-        
+        started_at = started_at
+        lease_until = started_at + timedelta(seconds=lease_seconds)
         allowed = (
             Status.QUEUED, Status.PROCESSING
         ) if allow_processing else (Status.QUEUED,)

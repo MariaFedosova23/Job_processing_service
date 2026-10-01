@@ -29,9 +29,10 @@ logger = logging.getLogger('job_processing_service')
     max_retries=MAX_TRIES,
     retry_jitter=True
 )
-def process_task(self, task_id: int) -> None:
+def process_task(self, task_id: int, owner_token: str | None = None) -> None:
     is_final_attempt = self.request.retries >= self.max_retries
     celery_task_id = self.request.id
+    owner_toker = owner_token
 
     asyncio.run(
         process_task_async(

@@ -223,7 +223,7 @@ class TaskService:
             return None
         logger.info(
             "Обработка начата: task_id=%s, owner_token=%s, lease_until=%s",
-            task_id, owner_token, task.lease_until
+            task_id, owner_token, task.lease_until,
             extra={"event": "task_processing_begin", "task_id": task_id},
         )
         return task

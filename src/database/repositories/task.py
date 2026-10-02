@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, and_, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,18 +74,25 @@ class TaskRepository:
     ) -> TaskDB | None:
         started_at = started_at
         lease_until = started_at + timedelta(seconds=lease_seconds)
-        allowed = (
-            Status.QUEUED, Status.PROCESSING
-        ) if allow_processing else (Status.QUEUED,)
 
+        condition = or_(
+            TaskDB.status == Status.QUEUED,
+            and_(
+                TaskDB.status == Status.PROCESSING,
+                allow_processing,
+                TaskDB.lease_until < started_at,
+            ),
+        )
 
         stmt = (
             update(TaskDB)
             .where(TaskDB.id == task_id)
-            .where(TaskDB.status.in_(allowed))
+            .where(condition)
             .values(
                 status=Status.PROCESSING,
                 started_at=started_at,
+                owner_token=owner_token,
+                lease_until=lease_until,
                 error=None,
             )
             .returning(TaskDB)
@@ -93,8 +100,36 @@ class TaskRepository:
         result = await self.session.execute(stmt)
         task = result.scalar_one_or_none()
         await self.session.commit()
-        
         return task
+
+    async def release_to_queued(
+            self,
+            task_id: int,
+            *,
+            owner_token: str,
+    ) -> TaskDB | None:
+        """
+        PROCESSING → QUEUED, освобождает владение.
+        """
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.owner_token == owner_token)
+            .where(TaskDB.status == Status.PROCESSING)
+            .values(
+                status=Status.QUEUED,
+                owner_token=None,
+                lease_until=None,
+                started_at=None,
+                error=None,
+            )
+            .returning(TaskDB)
+        )
+        result = await self.session.execute(stmt)
+        task = result.scalar_one_or_none()
+        await self.session.commit()
+        return task
+
     
     async def mark_queued_new_task(self, task_id: int) -> TaskDB | None:
         stmt = (
@@ -130,70 +165,35 @@ class TaskRepository:
         
 
 
-    async def save_result(
-        self,
-        task_id: int,
-        *,
-        original_length: int,
-        word_count: int,
-        processed_at: datetime,
-    ) -> TaskResultDB | None:
-        task = await self.session.get(TaskDB, task_id)
-        if task is None:
-            return None
-        if task.status == Status.Cancelled:
-            return
-        
-        result = TaskResultDB(
-            task_id=task_id,
-            original_length=original_length,
-            word_count=word_count,
-            processed_at=processed_at,
-        )
-        self.session.add(result)
-        await self.session.commit()
-        await self.session.refresh(result)
-        return result
-
-
-    async def mark_done(
-        self,
-        task_id: int,
-        *,
-        finished_at: datetime
-    ) -> TaskDB | None:
-        
-        task = await self.session.get(TaskDB, task_id)
-        if task is None:
-            return None
-        task.status = Status.DONE
-        task.finished_at = finished_at
-        task.error = None
-        await self.session.commit()
-        # await self.session.refresh(task)
-        return task
-
     async def mark_failed(
         self,
         task_id: int,
         *,
         error: str,
         finished_at: datetime,
+        owner_token: str,
     ) -> TaskDB | None:
         """
         Ставит задаче статус ERROR,
         записывает текст ошибки и время завершения.
         Возвращает None, если задачи нет.
         """
-        task = await self.session.get(TaskDB, task_id)
-        if task is None:
-            return None
-
-        task.status = Status.ERROR       
-        task.error = error
-        task.finished_at = finished_at
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.owner_token == owner_token)   
+            .where(TaskDB.status == Status.PROCESSING)
+            .values(
+                status=Status.ERROR,
+                error=error,
+                finished_at=finished_at,
+                owner_token=None,
+                lease_until=None,
+            )
+            .returning(TaskDB)
+        )
+        task = (await self.session.execute(stmt)).scalar_one_or_none()
         await self.session.commit()
-        # await self.session.refresh(task)
         return task
 
 
@@ -201,19 +201,42 @@ class TaskRepository:
         self,
         task_id: int,
         *,
+        owner_token: str,
         original_length: int,
         word_count: int,
         processed_at: datetime,
         finished_at: datetime,
     ) -> TaskDB | None:
-        task = await self.session.get(TaskDB, task_id)
+
+        result_stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.owner_token == owner_token)      # fencing
+            .where(TaskDB.status == Status.PROCESSING)
+            .where(TaskDB.lease_until > TaskDB.started_at)
+            .values(
+                status=Status.DONE,
+                finished_at=finished_at,
+                error=None,
+                owner_token=None,   
+                lease_until=None,
+            )
+            .returning(TaskDB)
+        )
+        task = (
+            await self.session.execute(result_stmt)
+        ).scalar_one_or_none()
+        
         if task is None:
+            await self.session.commit()
             return None
         if task.status == Status.CANCELLED:
             return
 
         existing = await self.session.execute(
-            select(TaskResultDB).where(TaskResultDB.task_id == task_id)
+            select(TaskResultDB).where(
+                TaskResultDB.task_id == task_id
+            )
         )
         if existing.scalar_one_or_none() is None:
             self.session.add(TaskResultDB(
@@ -223,12 +246,7 @@ class TaskRepository:
                 processed_at=processed_at,
             ))
 
-        task.status = Status.DONE
-        task.finished_at = finished_at
-        task.error = None
-
         await self.session.commit()
-        # await self.session.refresh(task)
         return task
 
     async def create_file(

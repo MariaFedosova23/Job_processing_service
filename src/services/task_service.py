@@ -204,22 +204,26 @@ class TaskService:
         task_id: int,
         *,
         allow_processing: bool = False,
+        owner_token: str,
+        lease_seconds: int,
     ) -> TaskDB | None:
         task = await self.repo.mark_processing(
             task_id,
             started_at=datetime.now(timezone.utc),
             allow_processing=allow_processing,
+            owner_token=owner_token,
+            lease_seconds=lease_seconds,
         )
         if task is None:
             logger.info(
-                "Задача не в QUEUED (или PROCESSING при ретрае), пропускаем: task_id=%s",
-                task_id,
+                "Задача не захвачена: task_id=%s, owner=%s",
+                task_id, owner_token,
                 extra={"event": "task_skip_not_queued", "task_id": task_id},
             )
             return None
         logger.info(
-            "Обработка начата: task_id=%s",
-            task_id,
+            "Обработка начата: task_id=%s, owner_token=%s, lease_until=%s",
+            task_id, owner_token, task.lease_until
             extra={"event": "task_processing_begin", "task_id": task_id},
         )
         return task
@@ -229,6 +233,7 @@ class TaskService:
         self,
         task_id: int,
         *,
+        owner_token: str,
         original_length: int,
         word_count: int,
     ) -> TaskDB | None:
@@ -242,6 +247,7 @@ class TaskService:
             word_count=word_count,
             processed_at=now,
             finished_at=now,
+            owner_token=owner_token,
         )
         if task is None:
             return None
@@ -251,7 +257,9 @@ class TaskService:
         )
         return task
     
-    async def fail_processing(self, task_id: int, error: str) -> TaskDB | None:
+    async def fail_processing(
+            self, task_id: int, error: str, owner_token: str
+    ) -> TaskDB | None:
         """
         PROCESSING → ERROR
         """
@@ -259,6 +267,7 @@ class TaskService:
             task_id,
             error=error,
             finished_at=datetime.now(timezone.utc),
+            owner_token=owner_token,
         )
         if task is None:
             logger.warning(
@@ -272,6 +281,32 @@ class TaskService:
             extra={"event": "task_processing_failed", "task_id": task_id},
         )
         return task
+
+    async def release_for_retry(
+        self,
+        task_id: int,
+        *,
+        owner_token: str,
+    ) -> TaskDB | None:
+        task = await self.repo.release_to_queued(
+            task_id, owner_token=owner_token,
+        )
+        if task is None:
+            logger.warning(
+                "release_for_retry: нет владелец или статус не PROCESSING: "
+                "task_id=%s, owner_token=%s",
+                task_id, owner_token,
+                extra={"event": "task_release_failed", "task_id": task_id},
+            )
+        else:
+            logger.info(
+                "Задача возвращена в QUEUED для ретрая: task_id=%s",
+                task_id,
+                extra={"event": "task_released_for_retry", "task_id": task_id},
+            )
+        return task
+
+
 
 
     async def upload_file(

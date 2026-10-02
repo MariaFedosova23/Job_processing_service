@@ -27,7 +27,10 @@ celery.conf.update(
     timezone=TIMEZONE,
     enable_utc=ENABLE_UTC,
     task_acks_late=True,
-    result_expires=3600
+    result_expires=3600,
+    broker_transport_options={
+        'visibility_timeout': 3600
+    }
 )
 
 

@@ -16,7 +16,8 @@ from src.constants import (
     TASK_PRIORITY_LOW,
     TASK_PRIORITY_HIGH,
     TASK_TITLE_MAX_LENGTH,
-    TASK_EXTERNAL_ID_MAX_LENGTH
+    TASK_EXTERNAL_ID_MAX_LENGTH,
+    MAX_LENGTH_OWNER_TOKEN
 )
 from src.enums import Status
 
@@ -33,9 +34,10 @@ class TaskDB(Base):
             name="ck_tasks_status",
         ),
     )
-    owner_token: Mapped[str | None] = mapped_column(unique=True, nullable=True)
-    lease_until: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True)
+    owner_token: Mapped[str | None] = mapped_column(
+        String(MAX_LENGTH_OWNER_TOKEN), unique=True, nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 

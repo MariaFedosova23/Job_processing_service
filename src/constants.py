@@ -22,16 +22,7 @@ MIN_OFFSET = 0
 SIZE_LOGGING_FILES = 5 * 1024 * 1024
 COUNT_LOGGING_FILES = 5
 
-TIME_CELERY_TASK = 1
-
-
-ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
-    "new": {"processing", "error", 'done', 'queued'},
-    "processing": {"done", "error", 'new', 'queued'},
-    "done": {"processing", "error", 'new', 'queued'},
-    "error": {"processing", "new", 'done', 'queued'},
-    'queued': {'new', 'processing', 'done', 'error'},
-}
+TIME_CELERY_TASK = 10
 
 
 RETRY_BACKOFF_MAX=60
@@ -53,4 +44,25 @@ MAX_FILE_SIZE = 1024 * 1024 * 10
 ALLOWED_TYPES = {
     'application/pdf', 'text/plain', 'image/png',
     'image/jpeg',
+}
+
+
+ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    'new': {'queued', 'cancelled'},
+    'queued': {'processing', 'new', 'cancelled'},
+    'processing': {'done', 'error', 'queued', 'cancelled'},
+    'done': set(),
+    'error': {'queued', 'cancelled', 'new'},     
+    'cancelled': set(),
+}
+
+API_PATCH_TRANSITIONS: dict[str, set[str]] = {
+    'done': {'new'},
+    'error': {'new'},
+    'cancelled': {'new'},
+}
+
+WORKER_TRANSITIONS: dict[str, set[str]] = {
+    'queued':     {'processing'},
+    'processing': {'done', 'error', 'queued'},
 }

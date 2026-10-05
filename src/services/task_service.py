@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from fastapi import UploadFile
 
-
+from src.enums import Caller, Status
 from src.database.models.task import TaskDB
 from src.database.models.file import FileDB
-from src.schemas.tasks import Status, TaskCreateSchema
+from src.schemas.tasks import TaskCreateSchema
 from src.database.repositories.task import TaskRepository
 from src.services.exceptions import (
     TaskNotFoundError,
@@ -23,10 +23,11 @@ from src.services.validator_task import (
     validate_status_transition,
     validate_task_can_be_processed,
     validate_task_can_be_retry,
-    validate_task_can_be_canclled,
+    validate_task_can_be_cancelled,
+    validate_transition_for_caller
 )
 
-from src.worker.config import BROKER_URL
+
 from src.constants import ALLOWED_TYPES, MAX_FILE_SIZE
 
 logger = logging.getLogger('job_processing_service')
@@ -86,10 +87,15 @@ class TaskService:
         return task
 
     async def change_status(
-        self, task_id: int, new_status: Status
+        self,
+        task_id: int,
+        *,
+        new_status: Status,
+        caller: Caller
     ) -> TaskDB:
         task = await self.get_or_raise(task_id)
         old_status = task.status
+        validate_transition_for_caller(task_id, old_status, new_status, caller)
         validate_status_transition(task_id, old_status, new_status.value)
         task = await self.repo.update_status(task, new_status)
 
@@ -118,8 +124,6 @@ class TaskService:
             extra={"event": "task_deleted", "task_id": task_id},
         )
 
-
-    
 
     async def start_processing(self, task_id: int) -> TaskDB:
         """NEW -> QUEUED -> PROCESSING -> DONE."""

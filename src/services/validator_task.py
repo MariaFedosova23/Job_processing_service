@@ -1,7 +1,11 @@
 import logging
 
-from src.constants import ALLOWED_STATUS_TRANSITIONS
-from src.schemas.tasks import Status
+from src.constants import (
+    ALLOWED_STATUS_TRANSITIONS,
+    API_PATCH_TRANSITIONS,
+    WORKER_TRANSITIONS,
+)
+from src.enums import Status, Caller
 from src.services.exceptions import (
     InvalidStatusTransitionError, TaskCannotBeProcessedError,
     TaskCannotBeCancelledError, TaskCannotBeRetryError
@@ -9,6 +13,36 @@ from src.services.exceptions import (
 
 logger = logging.getLogger('job_processing_service')
 
+
+ALLOWED_BY_CALLER: dict[Caller, dict[str, set[str]]] = {
+    Caller.API_USER: API_PATCH_TRANSITIONS,
+    Caller.WORKER: WORKER_TRANSITIONS,
+}
+
+def validate_transition_for_caller(
+    task_id: int,
+    old_status: Status,
+    new_status: Status,
+    caller: Caller
+) -> None:
+    """Проверяет, разрешен ли переход (old_status -> new_status)
+    данному caller.
+    """
+    allowed_for_caller = ALLOWED_BY_CALLER.get(caller)
+    if allowed_for_caller is None:
+        raise TrasitionForbiddenError(
+            task_id, old_status, new_status, caller
+        )
+    allowed = allowed_for_caller.get(old_status.value, set())
+    if new_status.value not in allowed:
+        logger.warning(
+            'Недопустимый переход статуса: %s -> %s',
+            old_status, new_status,
+            extra={'event': 'task_status_change_failed', 'task_id': task_id},
+        )
+        raise TrasitionForbiddenError(
+            task_id, old_status, new_status, caller
+        )
 
 def validate_status_transition(
     task_id: int,
@@ -49,16 +83,17 @@ def validate_task_can_be_retry(task_id: int, current_status: str) -> None:
         raise TaskCannotBeRetryError(task_id, current_status)
 
 
-def validate_task_can_be_canclled(task_id: int, current_status: str) -> None:
+CANCELLABLE_STATUSES = {Status.NEW, Status.QUEUED, Status.PROCESSING}
+
+def validate_task_can_be_cancelled(task_id: int, current_status: str) -> None:
     """Проверяет, можно ли отменить задачу."""
-    if current_status not in (Status.QUEUED, Status.PROCESSING):
+    if current_status not in CANCELLABLE_STATUSES:
         logger.warning(
-            f'Задание можно повторно запустить '
-            f'только при статусе {Status.QUEUED} или '
-            f'{Status.PROCESSING}: status=%s',
-            current_status,
-            extra={'event': 'task_cannot_be_cancelled', 'task_id': task_id}
+            'Отмена возможна только из %s: status=%s',
+            CANCELLABLE_STATUSES, current_status,
+            extra={"event": "task_cannot_be_cancelled", "task_id": task_id},
         )
+        
         raise TaskCannotBeCancelledError(task_id, current_status)
 
 

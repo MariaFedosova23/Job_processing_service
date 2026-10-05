@@ -8,4 +8,8 @@ class Status(StrEnum):
     DONE = 'done'
     ERROR = 'error'
     CANCELLED = 'cancelled'
-    RETRY = 'retry'
+
+
+class Caller(StrEnum):
+    API_USER = 'api_user'
+    WORKER = 'worker'

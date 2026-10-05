@@ -1,12 +1,15 @@
 from datetime import datetime, timedelta
 
 from sqlalchemy import select, update, and_, or_
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func
 
 from src.database.models.task import TaskDB, TaskResultDB
 from src.database.models.file import FileDB
 from src.enums import Status
+
 
 
 class TaskRepository:
@@ -105,7 +108,6 @@ class TaskRepository:
     async def release_to_queued(
             self,
             task_id: int,
-            *,
             owner_token: str,
     ) -> TaskDB | None:
         """
@@ -131,7 +133,11 @@ class TaskRepository:
         return task
 
     
-    async def mark_queued_new_task(self, task_id: int) -> TaskDB | None:
+    async def mark_queued_new_task(
+            self,
+            task_id: int,
+            run_id: str
+    ) -> TaskDB | None:
         stmt = (
             update(TaskDB)
                 .where(TaskDB.id == task_id)
@@ -139,6 +145,7 @@ class TaskRepository:
                 .values(
                     status=Status.QUEUED,
                     error=None,
+                    run_id=run_id
                 )
                 .returning(TaskDB)
         )
@@ -147,7 +154,7 @@ class TaskRepository:
         await self.session.commit()
         return task
 
-    async def mark_queued_error_task(self, task_id: int) -> TaskDB | None:
+    async def mark_queued_error_task(self, task_id: int, run_id: str) -> TaskDB | None:
         stmt = (
             update(TaskDB)
                 .where(TaskDB.id == task_id)
@@ -155,6 +162,7 @@ class TaskRepository:
                 .values(
                     status=Status.QUEUED,
                     error=None,
+                    run_id=run_id,
                 )
                 .returning(TaskDB)
         )
@@ -163,7 +171,28 @@ class TaskRepository:
         await self.session.commit()
         return task
         
-
+    async def revert_to_new_status(
+        self,
+        task_id: int,
+        run_id: str
+    ) -> TaskDB | None:
+        """QUEUED -> NEW."""
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.status == Status.QUEUED)
+            .where(TaskDB.run_id == run_id)
+            .values(
+                status=Status.NEW,
+                run_id=None,
+                error=None,
+            )
+            .returning(TaskDB)
+        )
+        result = await self.session.execute(stmt)
+        task = result.scalar_one_or_none()
+        await self.session.commit()
+        return task
 
     async def mark_failed(
         self,
@@ -206,14 +235,15 @@ class TaskRepository:
         word_count: int,
         processed_at: datetime,
         finished_at: datetime,
+        run_id: str,
     ) -> TaskDB | None:
-
         result_stmt = (
             update(TaskDB)
             .where(TaskDB.id == task_id)
-            .where(TaskDB.owner_token == owner_token)      # fencing
+            .where(TaskDB.owner_token == owner_token) 
             .where(TaskDB.status == Status.PROCESSING)
-            .where(TaskDB.lease_until > TaskDB.started_at)
+            .where(TaskDB.run_id == run_id)
+            .where(TaskDB.lease_until > func.now())
             .values(
                 status=Status.DONE,
                 finished_at=finished_at,
@@ -228,23 +258,23 @@ class TaskRepository:
         ).scalar_one_or_none()
         
         if task is None:
-            await self.session.commit()
+            await self.session.rollback()
             return None
         if task.status == Status.CANCELLED:
             return
 
-        existing = await self.session.execute(
-            select(TaskResultDB).where(
-                TaskResultDB.task_id == task_id
-            )
-        )
-        if existing.scalar_one_or_none() is None:
-            self.session.add(TaskResultDB(
+        
+        stmt = (
+            insert(TaskResultDB)
+            .values(
                 task_id=task_id,
                 original_length=original_length,
                 word_count=word_count,
                 processed_at=processed_at,
-            ))
+            )
+            .on_conflict_do_nothing(index_elements=['task_id'])
+        )
+        await self.session.execute(stmt)
 
         await self.session.commit()
         return task

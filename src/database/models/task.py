@@ -17,7 +17,8 @@ from src.constants import (
     TASK_PRIORITY_HIGH,
     TASK_TITLE_MAX_LENGTH,
     TASK_EXTERNAL_ID_MAX_LENGTH,
-    MAX_LENGTH_OWNER_TOKEN
+    MAX_LENGTH_OWNER_TOKEN,
+    MAX_LENGTH_RUN_ID
 )
 from src.enums import Status
 
@@ -40,6 +41,10 @@ class TaskDB(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    run_id: Mapped[str | None] = mapped_column(
+        String(MAX_LENGTH_RUN_ID),
+        nullable=True
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     external_id: Mapped[str] = mapped_column(String(

@@ -51,6 +51,7 @@ async def process_task_async(
         celery_task_id: str,
         attempt: int = 0,
         is_final_attempt: bool = False,
+        
 ) -> None:
     logger.info(
         "Начало обработки задачи: task_id=%s, celery_task_id=%s",
@@ -72,6 +73,7 @@ async def process_task_async(
         if task is None:
             return None
         text = task.text
+        run_id = task.run_id
 
     heartbeat = LeaseHeartbeat(
         session_factory=get_session,
@@ -110,6 +112,7 @@ async def process_task_async(
                 owner_token=owner_token,
                 original_length=original_length,
                 word_count=word_count,
+                run_id=run_id,
             )
         logger.info(
             "Обработка завершена успешно: task_id=%s, celery_task_id=%s",

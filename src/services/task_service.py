@@ -118,10 +118,14 @@ class TaskService:
             extra={"event": "task_deleted", "task_id": task_id},
         )
 
+
+    
+
     async def start_processing(self, task_id: int) -> TaskDB:
         """NEW -> QUEUED -> PROCESSING -> DONE."""
 
-        task = await self.repo.mark_queued_new_task(task_id)
+        run_id = uuid.uuid4().hex
+        task = await self.repo.mark_queued_new_task(task_id, run_id)
 
         if task is None:
             existing = await self.repo.get(task_id)
@@ -143,15 +147,24 @@ class TaskService:
         
         except Exception:
             logger.exception(
-                'Не удалось поставить задачу в очередь: task_id=%s', task_id,
+                'Не удалось поставить задачу в очередь: task_id=%s, run_id=%s',
+                task_id, run_id,
                 extra={'event': 'task_enqueue_failed', 'task_id': task_id},
             )
-            await self.repo.update_status(task, Status.NEW)
+            reverted = await self.repo.revert_to_new_status(
+                task_id, run_id
+            )
+            if reverted is None:
+                logger.info(
+                    'Откат в NEW не выполнен: run_id устарел или статус изменился: task_id=%s, run_id=%s',
+                    task_id, run_id,
+                    extra={'event': 'task_revert_skipped', 'task_id': task_id},
+                )
             raise
 
         logger.info(
-            'Задача поставлена в очередь: task_id=%s, celery_task_id=%s',
-            task_id, celery_task_id,
+            'Задача поставлена в очередь: task_id=%s, celery_task_id=%s, run_id=%s',
+            task_id, celery_task_id, run_id,
             extra={'event': 'task_processing_started', 'task_id': task_id},
         )
         return StartProcessingResult(task=task, celery_task_id=celery_task_id)
@@ -159,8 +172,8 @@ class TaskService:
     
     async def retry_task(self, task_id) -> TaskDB:
         """ERROR -> QUEUED-> PROCESSING -> DONE/ERROR."""
-
-        task = await self.repo.mark_queued_error_task(task_id)
+        run_id = uuid.uuid4().hex
+        task = await self.repo.mark_queued_error_task(task_id, run_id)
         if task is None:
             existing = await self.repo.get(task_id)
             if existing is None:
@@ -236,6 +249,7 @@ class TaskService:
         owner_token: str,
         original_length: int,
         word_count: int,
+        run_id: str,
     ) -> TaskDB | None:
         """
         Сохраняет результат и переводит PROCESSING → DONE.
@@ -248,6 +262,7 @@ class TaskService:
             processed_at=now,
             finished_at=now,
             owner_token=owner_token,
+            run_id=run_id,
         )
         if task is None:
             return None

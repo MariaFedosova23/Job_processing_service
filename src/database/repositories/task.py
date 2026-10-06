@@ -286,10 +286,7 @@ class TaskRepository:
         if task is None:
             await self.session.rollback()
             return None
-        if task.status == Status.CANCELLED:
-            return
 
-        
         stmt = (
             insert(TaskResultDB)
             .values(

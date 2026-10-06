@@ -14,7 +14,9 @@ from src.constants import (
     RETRY_BACKOFF_MAX,
     TIME_CELERY_TASK,
     FORBIDDEN_WORD_IN_TEXT,
-    LEASE_SECONDS
+    LEASE_SECONDS,
+    SOFT_TIME,
+    TIME_LIMIT,
 )
 from src.services.task_service import TaskService
 from src.services.exceptions import ForbiddenWordsError, TaskProcessingError
@@ -30,7 +32,9 @@ logger = logging.getLogger('job_processing_service')
     retry_backoff=True,
     retry_backoff_max=RETRY_BACKOFF_MAX,
     max_retries=MAX_TRIES,
-    retry_jitter=True
+    retry_jitter=True,
+    soft_time_limit=SOFT_TIME,
+    time_limit=TIME_LIMIT,
 )
 def process_task(self, task_id: int) -> None:
     is_final_attempt = self.request.retries >= self.max_retries
@@ -91,8 +95,6 @@ async def process_task_async(
            
         original_length = len(text)
         word_count = len(text.split())
-        
-        await asyncio.sleep(TIME_CELERY_TASK)
 
         if heartbeat.is_lost:
             logger.warning(
@@ -101,12 +103,22 @@ async def process_task_async(
                 extra={"event": "task_result_dropped", "task_id": task_id},
             )
             return
+        await asyncio.sleep(TIME_CELERY_TASK)
 
-            
+  
         async with get_session() as session:
             service = TaskService(
                 TaskRepository(session)
             )
+
+            if heartbeat.is_lost:
+                logger.warning(
+                    "Результат не сохраняем — lease потерян: task_id=%s",
+                    task_id,
+                    extra={"event": "task_result_dropped", "task_id": task_id},
+                )
+                return
+            
             await service.complete_processing(
                 task_id,
                 owner_token=owner_token,

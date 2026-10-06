@@ -10,7 +10,9 @@ from src.constants import (
 from src.enums import Status
 
 
-
+class TaskStatusUpdateSchema(BaseModel):
+    expected_status: Status
+    status: Status
 
 class TaskCreateSchema(BaseModel):
 

@@ -60,11 +60,42 @@ class TaskRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def update_status(self, task: TaskDB, new_status: Status) -> TaskDB:
-        task.status = new_status
+
+    async def update_status(
+        self,
+        task_id: int,
+        *,
+        expected_status: Status,
+        new_status: Status,  
+    ) -> TaskDB | None:
+        """Обновление статуса."""
+        values: dict = {'status': new_status}
+        if new_status == Status.NEW:
+            values.update({
+                'run_id': None,
+                'owner_token': None,
+                'lease_until': None,
+                'started_at': None,
+                'error': None,
+            })
+        elif new_status == Status.CANCELLED:
+            values.update({
+                'owner_token': None,
+                'lease_until': None,
+                'finished_at': func.now()
+            })
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.status == expected_status) 
+            .values(**values)
+            .returning(TaskDB)
+        )
+        result = await self.session.execute(stmt)
+        task = result.scalar_one_or_none()
         await self.session.commit()
-        await self.session.refresh(task)
         return task
+            
 
     async def mark_processing(
         self,
@@ -72,18 +103,16 @@ class TaskRepository:
         *,
         owner_token: str,
         lease_seconds: int,
-        started_at: datetime,
         allow_processing: bool = False,
     ) -> TaskDB | None:
-        started_at = started_at
-        lease_until = started_at + timedelta(seconds=lease_seconds)
+  
 
         condition = or_(
             TaskDB.status == Status.QUEUED,
             and_(
                 TaskDB.status == Status.PROCESSING,
                 allow_processing,
-                TaskDB.lease_until < started_at,
+                TaskDB.lease_until < func.now(),
             ),
         )
 
@@ -93,9 +122,9 @@ class TaskRepository:
             .where(condition)
             .values(
                 status=Status.PROCESSING,
-                started_at=started_at,
+                started_at=func.now(),
                 owner_token=owner_token,
-                lease_until=lease_until,
+                lease_until=func.now() + timedelta(seconds=lease_seconds),
                 error=None,
             )
             .returning(TaskDB)
@@ -199,7 +228,6 @@ class TaskRepository:
         task_id: int,
         *,
         error: str,
-        finished_at: datetime,
         owner_token: str,
     ) -> TaskDB | None:
         """
@@ -215,7 +243,7 @@ class TaskRepository:
             .values(
                 status=Status.ERROR,
                 error=error,
-                finished_at=finished_at,
+                finished_at=func.now(),
                 owner_token=None,
                 lease_until=None,
             )
@@ -233,8 +261,6 @@ class TaskRepository:
         owner_token: str,
         original_length: int,
         word_count: int,
-        processed_at: datetime,
-        finished_at: datetime,
         run_id: str,
     ) -> TaskDB | None:
         result_stmt = (
@@ -246,7 +272,7 @@ class TaskRepository:
             .where(TaskDB.lease_until > func.now())
             .values(
                 status=Status.DONE,
-                finished_at=finished_at,
+                finished_at=func.now(),
                 error=None,
                 owner_token=None,   
                 lease_until=None,
@@ -270,7 +296,7 @@ class TaskRepository:
                 task_id=task_id,
                 original_length=original_length,
                 word_count=word_count,
-                processed_at=processed_at,
+                processed_at=func.now(),
             )
             .on_conflict_do_nothing(index_elements=['task_id'])
         )
@@ -278,6 +304,40 @@ class TaskRepository:
 
         await self.session.commit()
         return task
+
+    async def renew_lease(
+        self,
+        task_id: int,
+        *,
+        owner_token: str,
+        lease_seconds: int
+    ) -> datetime | None:
+        """
+        Продлевает lease задачи, если владение всё ещё есть
+        и lease не истёк.
+
+        Возвращает True, если продление удалось,
+        False — если владение потеряно / lease истёк.
+        """
+     
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.owner_token == owner_token)
+            .where(TaskDB.status == Status.PROCESSING)
+            .where(TaskDB.lease_until > func.now())
+            .values(
+                lease_until=now + timedelta(seconds=lease_seconds)
+            )
+            .returning(TaskDB.lease_until)
+
+        )
+        result =  await self.session.execute(stmt)
+        new_lease_until = result.scalar_one_or_none()
+        await self.session.commit()
+        return new_lease_until
+
+
 
     async def create_file(
         self,

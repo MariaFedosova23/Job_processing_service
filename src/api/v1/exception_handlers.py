@@ -10,6 +10,8 @@ from src.services.exceptions import (
     TaskCannotBeProcessedError,
     TaskNotFoundError,
     TaskCannotBeCancelledError,
+    TransitionForbiddenError,
+    TaskStateConflictError,
 )
 
 logger = logging.getLogger("job_processing_service")
@@ -83,6 +85,28 @@ async def domain_error_handler(request: Request, exc: DomainError):
     )
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
+async def forbidden_handler(request: Request, exc: TransitionForbiddenError):
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": str(exc),
+            "task_id": exc.task_id,
+            "old_status": str(exc.old_status),
+            "new_status": str(exc.new_status),
+            "caller": str(exc.caller),
+        },
+    )
+
+async def conflict_handler(request: Request, exc: TaskStateConflictError):
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": str(exc),
+            "task_id": exc.task_id,
+            "expected_status": str(exc.expected_status),
+        },
+    )
+
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Регистрирует все обработчики доменных исключений."""
@@ -98,5 +122,17 @@ def register_exception_handlers(app: FastAPI) -> None:
     )
     app.add_exception_handler(
             TaskCannotBeCancelledError, cannot_cancell_handler,
-        )
+    )
     app.add_exception_handler(DomainError, domain_error_handler)
+
+    app.add_exception_handler(
+        TransitionForbiddenError, forbidden_handler
+    )
+    app.add_exception_handler(
+        TaskStateConflictError, conflict_handler
+    )
+
+
+
+
+

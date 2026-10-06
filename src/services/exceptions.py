@@ -68,3 +68,27 @@ class ForbiddenWordsError(TaskProcessingError):
         self.found_words = found_words
         words = ', '.join(found_words)
         super().__init__(f'Найдены запрещённые слова: {words}')
+
+
+class TransitionForbiddenError(Exception):
+    """Переход статуса запрещён для данного caller (→ 403)."""
+    def __init__(self, task_id, old_status, new_status, caller):
+        self.task_id = task_id
+        self.old_status = old_status
+        self.new_status = new_status
+        self.caller = caller
+        super().__init__(
+            f'Переход {old_status} → {new_status} '
+            f'запрещён для {caller} (task_id={task_id})'
+        )
+
+class TaskStateConflictError(Exception):
+    """Состояние изменилось между чтением и записью (→ 409)."""
+    def __init__(self, task_id, expected_status):
+        self.task_id = task_id
+        self.expected_status = expected_status
+        super().__init__(
+            f'Задача {task_id}: ожидался статус '
+            f'{expected_status}, но состояние уже изменилось'
+        )
+

@@ -1,12 +1,9 @@
 import asyncio
 import threading
 import logging
-from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import update
+from src.database.repositories.task import TaskRepository
 
-from src.database.models.task import TaskDB
-from src.enums import Status
 from src.constants import INTERVAL
 
 logger = logging.getLogger('job_processing_service')
@@ -62,23 +59,14 @@ class LeaseHeartbeat:
     async def renew_once(self) -> None:
         try:
             async with self.session_factory() as session:
-                now = datetime.now(timezone.utc)
-                stmt = (
-                    update(TaskDB)
-                    .where(TaskDB.id == self.task_id)
-                    .where(TaskDB.owner_token == self.owner_token)
-                    .where(TaskDB.status == Status.PROCESSING)
-                    .values(
-                        lease_until=now + timedelta(seconds=self.lease_seconds)
-                    )
-                    .returning(TaskDB.id)
-        
+                repo = TaskRepository(session)
+                new_lease_until = await repo.renew_lease(
+                    self.task_id,
+                    owner_token=self.owner_token,
+                    lease_seconds=self.lease_seconds,
                 )
-                result =  await session.execute(stmt)
-                task_id = result.scalar_one_or_none()
-                await session.commit()
-
-                if task_id is None:
+    
+                if new_lease_until is None:
                     logger.warning(
                         "Lease потерян: task_id=%s, owner=%s",
                         self.task_id, self.owner_token,
@@ -88,9 +76,7 @@ class LeaseHeartbeat:
                 else:
                     logger.debug(
                         "Lease продлён: task_id=%s, until=%s",
-                        self.task_id,
-                        now + timedelta(seconds=self.lease_seconds),
-
+                        self.task_id, new_lease_until
                     )
         except Exception:
             logger.exception(

@@ -4,13 +4,12 @@ from fastapi import Query, APIRouter, UploadFile, File, HTTPException
 
 from src.schemas.tasks import (
     TaskCreateSchema,
-    TaskStatusSchema,
-    TaskResultSchema,
     TaskShortSchema,
     TaskListSchema,
     TaskDetailStateSchema,
     TaskResponseProcessSchema,
-    TaskDetailSchema
+    TaskDetailSchema,
+    TaskStatusUpdateSchema,
 )
 from src.constants import (
     DEFAULT_LIMIT, DEFAULT_OFFSET,
@@ -20,7 +19,7 @@ from src.constants import (
     
 )
 from src.api.v1.dependencies import TaskServiceDep
-from src.enums import Status
+from src.enums import Status, Caller
 from src.schemas.file import FileResponse
 
 
@@ -81,11 +80,16 @@ async def create_task(
         summary='Изменить статус задание',
 )
 async def patch_status_of_task(
-    payload: TaskStatusSchema,
+    payload: TaskStatusUpdateSchema,
     task_id: int,
     service: TaskServiceDep
 ) -> TaskDetailSchema:
-    return await service.change_status(task_id, payload.status)
+    return await service.change_status(
+        task_id,
+        expected_status=payload.expected_status,
+        new_status=payload.status,
+        caller=Caller.API_USER,
+    )
     
    
 @router.delete(

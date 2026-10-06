@@ -17,12 +17,10 @@ from src.services.exceptions import (
     TaskNotFoundError,
     DuplicateExternalIdError,
     TaskCannotBeProcessedError,
-    TaskCannotBeRetryError
+    TaskCannotBeRetryError,
+    TaskStateConflictError
 )
 from src.services.validator_task import (
-    validate_status_transition,
-    validate_task_can_be_processed,
-    validate_task_can_be_retry,
     validate_task_can_be_cancelled,
     validate_transition_for_caller
 )
@@ -90,18 +88,29 @@ class TaskService:
         self,
         task_id: int,
         *,
+        expected_status: Status,
         new_status: Status,
         caller: Caller
     ) -> TaskDB:
         task = await self.get_or_raise(task_id)
-        old_status = task.status
-        validate_transition_for_caller(task_id, old_status, new_status, caller)
-        validate_status_transition(task_id, old_status, new_status.value)
-        task = await self.repo.update_status(task, new_status)
+        validate_transition_for_caller(
+            task_id, expected_status, new_status, caller
+        )
+        
+        task = await self.repo.update_status(
+            task_id,
+            expected_status=expected_status,
+            new_status=new_status,
+        )
+        if task is None:
+            existing = await self.repo.get(task_id)
+            if existing is None:
+                raise TaskNotFoundError(task_id)
+            raise TaskStateConflictError(task_id, expected_status)
 
         logger.info(
-            "Статус задачи изменён: %s -> %s",
-            old_status, new_status.value,
+            "Статус задачи изменён: %s -> %s (caller=%s)",
+            expected_status, new_status.value, caller.value,
             extra={"event": "task_status_changed", "task_id": task.id},
         )
         return task
@@ -171,7 +180,10 @@ class TaskService:
             task_id, celery_task_id, run_id,
             extra={'event': 'task_processing_started', 'task_id': task_id},
         )
-        return StartProcessingResult(task=task, celery_task_id=celery_task_id)
+        return StartProcessingResult(
+            task=task,
+            celery_task_id=celery_task_id
+        )
 
     
     async def retry_task(self, task_id) -> TaskDB:
@@ -211,10 +223,16 @@ class TaskService:
 
     async def cancel_task(self, task_id) -> TaskDB:
         task = await self.get_or_raise(task_id)
-        validate_task_can_be_canclled(task_id, task.status)
+        validate_task_can_be_cancelled(task_id, task.status)
 
-        task = await self.repo.update_status(task, Status.CANCELLED)
-        return task
+        task_updated = await self.repo.update_status(
+            task_id,
+            expected_status=task.status,
+            new_status = Status.CANCELLED
+        )
+        if task_updated is None:
+            raise TaskStateConflictError(task_id, task.status)
+        return task_updated
     
     async def begin_processing(
         self,
@@ -226,7 +244,6 @@ class TaskService:
     ) -> TaskDB | None:
         task = await self.repo.mark_processing(
             task_id,
-            started_at=datetime.now(timezone.utc),
             allow_processing=allow_processing,
             owner_token=owner_token,
             lease_seconds=lease_seconds,
@@ -263,8 +280,6 @@ class TaskService:
             task_id,
             original_length=original_length,
             word_count=word_count,
-            processed_at=now,
-            finished_at=now,
             owner_token=owner_token,
             run_id=run_id,
         )
@@ -285,7 +300,6 @@ class TaskService:
         task = await self.repo.mark_failed(
             task_id,
             error=error,
-            finished_at=datetime.now(timezone.utc),
             owner_token=owner_token,
         )
         if task is None:

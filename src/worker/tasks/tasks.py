@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from sqlalchemy.exc import OperationalError
 import uuid
-from src.worker.heartbeat import LeaseHeartbeat
+from src.worker.lease import watch_lease, LeaseLostError, run_with_lease
 
 from src.worker.app import celery
 from src.database.database import get_session
@@ -63,6 +63,8 @@ async def process_task_async(
         extra={'event': 'task_processing_started', 'task_id': task_id},
     )
     owner_token = str(uuid.uuid4())
+    loop = asyncio.get_running_loop()
+    claim_started = loop.time()
 
     async with get_session() as session:
         service = TaskService(
@@ -76,97 +78,111 @@ async def process_task_async(
         )
         if task is None:
             return None
+
+        
         text = task.text
         run_id = task.run_id
 
-    heartbeat = LeaseHeartbeat(
-        session_factory=get_session,
-        task_id=task_id,
-        owner_token=owner_token,
-        lease_seconds=LEASE_SECONDS,
-    )
-    heartbeat.start()
+
+
     try:
-        found = [
-            word for word in FORBIDDEN_WORD_IN_TEXT if word in text.lower()
-        ]
-        if found:
-            raise ForbiddenWordsError(found)
-           
-        original_length = len(text)
-        word_count = len(text.split())
-
-        if heartbeat.is_lost:
-            logger.warning(
-                "Результат не сохраняем — lease потерян: task_id=%s",
+        await run_with_lease(
+            work=do_processing(
+                task_id, text, run_id, owner_token,
+                celery_task_id, is_final_attempt,
+            ),
+            guard=watch_lease(
                 task_id,
-                extra={"event": "task_result_dropped", "task_id": task_id},
-            )
-            return
-        await asyncio.sleep(TIME_CELERY_TASK)
-
-  
-        async with get_session() as session:
-            service = TaskService(
-                TaskRepository(session)
-            )
-
-            if heartbeat.is_lost:
-                logger.warning(
-                    "Результат не сохраняем — lease потерян: task_id=%s",
-                    task_id,
-                    extra={"event": "task_result_dropped", "task_id": task_id},
-                )
-                return
-            
-            await service.complete_processing(
-                task_id,
-                owner_token=owner_token,
-                original_length=original_length,
-                word_count=word_count,
-                run_id=run_id,
-            )
-        logger.info(
-            "Обработка завершена успешно: task_id=%s, celery_task_id=%s",
-            task_id, celery_task_id,
-            extra={'event': 'task_processing_done', 'task_id': task_id},
+                owner_token,
+                initial_deadline=claim_started + LEASE_SECONDS,
+                lease_seconds=LEASE_SECONDS,
+            ),
         )
-    except OperationalError:
-        if is_final_attempt:
-            logger.exception(
-                'Исчерпаны попытки обработки: task_id=%s', task_id,
+    except LeaseLostError:
+        logger.warning(
+            "Обработка прекращена: владение потеряно: task_id=%s",
+            task_id,
+            extra={'event': 'task_result_dropped', 'task_id': task_id},
+        )
+
+
+    async def do_processing(
+        task_id: int,
+        test: str,
+        run_id: str,
+        owner_token: str,
+        celery_task_id: str,
+        is_final_attempt: bool,
+    ) -> None:
+        """Основная бизнес-логика."""
+
+        try:
+            found = [
+                word for word in FORBIDDEN_WORD_IN_TEXT if word in text.lower()
+            ]
+            if found:
+                raise ForbiddenWordsError(found)
+            
+            original_length = len(text)
+            word_count = len(text.split())
+
+            await asyncio.sleep(TIME_CELERY_TASK)
+
+    
+            async with get_session() as session:
+                service = TaskService(
+                    TaskRepository(session)
+                )
+                await service.complete_processing(
+                    task_id,
+                    owner_token=owner_token,
+                    original_length=original_length,
+                    word_count=word_count,
+                    run_id=run_id,
+                )
+            logger.info(
+                "Обработка завершена успешно: task_id=%s, celery_task_id=%s",
+                task_id, celery_task_id,
                 extra={
-                    'event': 'task_retries_retries_exhausted',
+                    'event': 'task_processing_done',
                     'task_id': task_id
                 },
             )
-            return None
-        try:
-            if not heartbeat.is_lost:
+        
+        except OperationalError:
+            if is_final_attempt:
+                logger.exception(
+                    'Исчерпаны попытки обработки: task_id=%s', task_id,
+                    extra={
+                        'event': 'task_retries_retries_exhausted',
+                        'task_id': task_id
+                    },
+                )
+                return None
+            try:
                 async with get_session() as session:
                     service = TaskService(TaskRepository(session))
                     await service.release_for_retry(
                         task_id, owner_token=owner_token,
                     )
-   
-        except Exception:
-            logger.exception(
-                "Не удалось освободить задачу перед ретраем: task_id=%s",
-                task_id,
-                extra={"event": "task_release_error", "task_id": task_id},
-            )
-        raise
+    
+            except Exception:
+                logger.exception(
+                    "Не удалось освободить задачу перед ретраем: task_id=%s",
+                    task_id,
+                    extra={"event": "task_release_error", "task_id": task_id},
+                )
+            raise
 
-    except TaskProcessingError as exc:
-        logger.warning(
-            "Бизнес-ошибка обработки: task_id=%s, error=%s",
-            task_id, exc,
-            extra={
-                "event": "task_processing_business_error",
-                "task_id": task_id
-            },
-        )
-        if not heartbeat.is_lost:
+        except TaskProcessingError as exc:
+            logger.warning(
+                "Бизнес-ошибка обработки: task_id=%s, error=%s",
+                task_id, exc,
+                extra={
+                    "event": "task_processing_business_error",
+                    "task_id": task_id
+                },
+            )
             async with get_session() as session:
                 service = TaskService(
                     TaskRepository(session)
@@ -176,15 +192,14 @@ async def process_task_async(
                     owner_token=owner_token,
                     error=str(exc))
 
-    except Exception as exc:
-        logger.exception(
-            'Непредвиденная ошибка обработки: task_id=%s, celery_task_id=%s',
-            task_id, celery_task_id,
-            extra={
-                'event': 'task_processing_unexpected_error', 'task_id': task_id
-            },
-        )
-        if not heartbeat.is_lost:
+        except Exception as exc:
+            logger.exception(
+                'Непредвиденная ошибка обработки: task_id=%s, celery_task_id=%s',
+                task_id, celery_task_id,
+                extra={
+                    'event': 'task_processing_unexpected_error', 'task_id': task_id
+                },
+            )
             async with get_session() as session:
                 service = TaskService(
                     TaskRepository(session)
@@ -196,8 +211,7 @@ async def process_task_async(
                         type(exc).__name__
                     }',
                 )
-    finally:
-        heartbeat.stop()
+
 
 
 @celery.task(

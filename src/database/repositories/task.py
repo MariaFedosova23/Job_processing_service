@@ -324,7 +324,7 @@ class TaskRepository:
             .where(TaskDB.status == Status.PROCESSING)
             .where(TaskDB.lease_until > func.now())
             .values(
-                lease_until=now + timedelta(seconds=lease_seconds)
+                lease_until=func.now() + timedelta(seconds=lease_seconds)
             )
             .returning(TaskDB.lease_until)
 

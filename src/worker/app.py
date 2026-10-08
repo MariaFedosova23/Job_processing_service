@@ -1,6 +1,7 @@
 import asyncio
 from celery.signals import worker_process_init
 from celery import Celery
+from celery.schedules import crontab
 
 
 from src.worker.config import (
@@ -32,6 +33,14 @@ celery.conf.update(
         'visibility_timeout': 3600
     }
 )
+
+
+celery.conf.beat_schedule = {
+    'sweep-state-cancelling': {
+        'task': 'worker.sweep_stale_cancelling',
+        'schedule': crontab(minute='*/1'),
+    },
+}
 
 
 @worker_process_init.connect

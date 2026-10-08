@@ -42,6 +42,23 @@ services:
       - files_volume:/app/files
     restart: unless-stopped
 
+  beat:
+    build: .
+    command: celery -A src.worker.app beat --loglevel=info
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      UPLOAD_DIR: /app/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
+    restart: unless-stopped
 
   postgres:
     image: postgres:15-alpine

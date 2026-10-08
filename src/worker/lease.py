@@ -53,7 +53,6 @@ async def watch_lease(
         if renewed is None:
             raise LeaseLostError("Владение потеряно")
 
-        
         deadline = renewal_started + lease_seconds
 
 
@@ -73,12 +72,18 @@ async def run_with_lease(work, guard):
             await guard_task
 
         return await work_task
-    
+    except LeaseLostError:
+        raise
+
     finally:
         work_task.cancel()
         guard_task.cancel()
-        await asyncio.gather(
-            work_task,
-            guard_task,
-            return_exceptions=True,
-        )
+        try:
+            await asyncio.gather(
+                work_task,
+                guard_task,
+            )
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning('Ошибка при очистке задач: %s', e)

@@ -8,6 +8,7 @@ class Status(StrEnum):
     DONE = 'done'
     ERROR = 'error'
     CANCELLED = 'cancelled'
+    CANCELLING = 'cancelling'
 
 
 class Caller(StrEnum):

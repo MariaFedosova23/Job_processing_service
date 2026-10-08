@@ -84,6 +84,7 @@ class TaskRepository:
                 'lease_until': None,
                 'finished_at': func.now()
             })
+
         stmt = (
             update(TaskDB)
             .where(TaskDB.id == task_id)
@@ -334,7 +335,48 @@ class TaskRepository:
         await self.session.commit()
         return new_lease_until
 
+    async def confirm_cancellation(
+        self,
+        task_id: int,
+        *,
+        owner_token: str,
+    ) -> TaskDB | None:
+        """Подтверждает отмену: CANCELLING → CANCELLED."""
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.status == Status.CANCELLING)
+            .where(TaskDB.owner_token == owner_token)
+            .values(
+                status=Status.CANCELLED,
+                owner_token=None,
+                lease_until=None,
+                finished_at=func.now(),
+            )
+            .returning(TaskDB)
+    )
+        result = await self.session.execute(stmt)
+        task = result.scalar_one_or_none()
+        await self.session.commit()
+        return task
 
+    async def sweep_stale_cancellations(self) -> list[TaskDB]:
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.status == Status.CANCELLING)
+            .where(TaskDB.lease_until < func.now())
+            .values(
+                status=Status.CANCELLED,
+                owner_token=None,
+                lease_until=None,
+                finished_at=func.now(),
+            )
+            .returning(TaskDB)
+        )
+        result = await self.session.execute(stmt)
+        tasks = list(result.scalars().all())
+        await self.session.commit()
+        return tasks
 
     async def create_file(
         self,

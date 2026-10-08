@@ -1,11 +1,11 @@
 import os
-import shutil
 import uuid
 from pathlib import Path
 import logging
 from typing import Callable
 from datetime import datetime, timezone
 from dataclasses import dataclass
+
 from fastapi import UploadFile
 
 from src.enums import Caller, Status
@@ -225,10 +225,16 @@ class TaskService:
         task = await self.get_or_raise(task_id)
         validate_task_can_be_cancelled(task_id, task.status)
 
+        if task.status == Status.QUEUED:
+            target_status = Status.CANCELLED
+        else:
+            target_status = Status.CANCELLING
+
+
         task_updated = await self.repo.update_status(
             task_id,
             expected_status=task.status,
-            new_status = Status.CANCELLED
+            new_status = target_status
         )
         if task_updated is None:
             raise TaskStateConflictError(task_id, task.status)
@@ -284,7 +290,18 @@ class TaskService:
             run_id=run_id,
         )
         if task is None:
-            return None
+            logger.info(
+                'Статус задачи изменился во время обработки. Проверяем на отмену...'
+            )
+            cancelled = await self.repo.confirm_cancellation(
+                task_id, owner_token=owner_token
+            )
+            if cancelled:
+                logger.info('Задача успешно переведена в CANCELLED из-за внешней отмены.')
+                
+            else: 
+                logger.warning('Не удалось сохранить результат и подтвердить отмену. task_id=%s", task_id')
+            return
         logger.info(
             "Обработка завершена: task_id=%s", task_id,
             extra={"event": "task_processing_done", "task_id": task_id},

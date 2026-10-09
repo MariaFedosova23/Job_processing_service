@@ -371,12 +371,12 @@ class TaskRepository:
                 lease_until=None,
                 finished_at=func.now(),
             )
-            .returning(TaskDB)
+            .returning(TaskDB.id)
         )
         result = await self.session.execute(stmt)
-        tasks = list(result.scalars().all())
+        tasks_ids = list(result.scalars().all())
         await self.session.commit()
-        return tasks
+        return tasks_ids
 
     async def create_file(
         self,

@@ -13,6 +13,7 @@ from src.worker.config import (
     TASK_SERIALIZER,
     TIMEZONE,
 )
+from src.constants import TIME_CELERY_BEAT_IN_MINUTE
 
 celery = Celery(
     'worker',
@@ -38,7 +39,7 @@ celery.conf.update(
 celery.conf.beat_schedule = {
     'sweep-state-cancelling': {
         'task': 'worker.sweep_stale_cancelling',
-        'schedule': crontab(minute='*/1'),
+        'schedule': crontab(minute=f'*/{TIME_CELERY_BEAT_IN_MINUTE}'),
     },
 }
 

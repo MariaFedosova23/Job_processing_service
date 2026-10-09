@@ -35,6 +35,7 @@ async def watch_lease(
             raise LeaseLostError("Истёк срок владения")
 
         renewal_started = loop.time()
+        logger.info('renewal_started=%s', renewal_started)
 
         try:
             async with asyncio.timeout(min(5.0, remaining)):
@@ -45,13 +46,15 @@ async def watch_lease(
                         owner_token=owner_token,
                         lease_seconds=lease_seconds,
                     )
+            if renewed is None:
+                raise LeaseLostError("Владение потеряно")
+        except LeaseLostError as err:
+            raise
         except Exception as exc:
             raise LeaseLostError(
                 "Не удалось подтвердить владение"
             ) from exc
 
-        if renewed is None:
-            raise LeaseLostError("Владение потеряно")
 
         deadline = renewal_started + lease_seconds
 
@@ -59,7 +62,6 @@ async def watch_lease(
 async def run_with_lease(work, guard):
     """
     Оркестратор: запускает воркер и сторожа.
-    Кто первый завершится — тот решает исход.
     """
     work_task = asyncio.create_task(work)
     guard_task = asyncio.create_task(guard)
@@ -68,22 +70,23 @@ async def run_with_lease(work, guard):
             {work_task, guard_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
+        
         if guard_task.done():
+
             await guard_task
 
         return await work_task
-    except LeaseLostError:
-        raise
 
     finally:
+
         work_task.cancel()
         guard_task.cancel()
-        try:
-            await asyncio.gather(
-                work_task,
-                guard_task,
-            )
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.warning('Ошибка при очистке задач: %s', e)
+
+        await asyncio.gather(
+            work_task,
+            guard_task,
+            return_exceptions=True
+        )
+
+   
+    

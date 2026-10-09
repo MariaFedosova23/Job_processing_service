@@ -84,6 +84,7 @@ async def process_task_async(
         run_id = task.run_id
 
     try:
+        logger.info('Запускаем задачи')
         original_length, word_count = await run_with_lease(
             work=calculate_result(text),
             guard=watch_lease(
@@ -114,7 +115,7 @@ async def process_task_async(
                 task_id,
                 extra={'event': 'task_result_dropped', 'task_id': task_id},
             )
-            return
+        return
     
     except ForbiddenWordsError as exc:
         logger.warning(
@@ -228,7 +229,7 @@ async def calculate_result(
     text: str
 ) -> tuple[int, int]:
     """Обработка текста."""
-
+    logger.info('Запускаем обработку текста: считаем длину текста и количество слов')
     found = [
         word for word in FORBIDDEN_WORD_IN_TEXT if word in text.lower()
     ]
@@ -242,6 +243,7 @@ async def calculate_result(
     for i, chunk in enumerate(chunks):
         await asyncio.sleep(TIME_CELERY_TASK)
         word = chunk.split()
+        logger.info('cмотрим на кол-во итераций: i=%i', i)
         word_count += len(word)
 
 
@@ -255,8 +257,11 @@ def sweep_stale_cancelling():
 async def async_sweep_stale_cancelling():
     async with get_session() as session:
         repo = TaskRepository(session)
-        logger.info('проверяю, если ли отмененные и завершаю их')
-        await repo.sweep_stale_cancellations()       
+        tasks_ids = await repo.sweep_stale_cancellations()  
+        if tasks_ids:    
+            logger.warning(
+                'Sweep: переведены в CANCELLED задачи, зависшие в CANCELLING: ids=%s', tasks_ids
+            )
 
 
 @celery.task(
@@ -275,7 +280,7 @@ async def get_file(self, task_id: int, internal_name: str) -> None:
     if not file_path.exists():
         return {'status': 'failed', 'error': 'Файл не найден'}
     try:
-        await asyncio.sleep(1)  # обработка файла
+        await asyncio.sleep(1)
         logger.info(
             "Воркер получил файл: task_id=%s, path=%s",
             task_id, file_path,

@@ -101,6 +101,7 @@ class TaskRepository:
     async def mark_processing(
         self,
         task_id: int,
+        run_id: str,
         *,
         owner_token: str,
         lease_seconds: int,
@@ -121,6 +122,7 @@ class TaskRepository:
             update(TaskDB)
             .where(TaskDB.id == task_id)
             .where(condition)
+            .where(TaskDB.run_id == run_id)
             .values(
                 status=Status.PROCESSING,
                 started_at=func.now(),

@@ -156,7 +156,7 @@ class TaskService:
             raise TaskCannotBeProcessedError(task_id, existing.status)
         
         try:
-            celery_task_id = self._enqueue(task_id)
+            celery_task_id = self._enqueue(task_id, run_id)
         
         except Exception:
             logger.exception(
@@ -243,6 +243,7 @@ class TaskService:
     async def begin_processing(
         self,
         task_id: int,
+        run_id: str,
         *,
         allow_processing: bool = False,
         owner_token: str,
@@ -250,6 +251,7 @@ class TaskService:
     ) -> TaskDB | None:
         task = await self.repo.mark_processing(
             task_id,
+            run_id,
             allow_processing=allow_processing,
             owner_token=owner_token,
             lease_seconds=lease_seconds,

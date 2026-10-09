@@ -36,13 +36,14 @@ logger = logging.getLogger('job_processing_service')
     soft_time_limit=SOFT_TIME,
     time_limit=TIME_LIMIT,
 )
-def process_task(self, task_id: int) -> None:
+def process_task(self, task_id: int, run_id: str) -> None:
     is_final_attempt = self.request.retries >= self.max_retries
     celery_task_id = self.request.id
 
     asyncio.run(
         process_task_async(
             task_id,
+            run_id=run_id,
             celery_task_id=celery_task_id,
             attempt=self.request.retries,
             is_final_attempt=is_final_attempt,
@@ -52,6 +53,7 @@ def process_task(self, task_id: int) -> None:
 
 async def process_task_async(
         task_id: int,
+        run_id: str,
         celery_task_id: str,
         attempt: int = 0,
         is_final_attempt: bool = False,
@@ -72,6 +74,7 @@ async def process_task_async(
         )
         task = await service.begin_processing(
             task_id,
+            run_id,
             allow_processing=attempt > 0,
             owner_token=owner_token,
             lease_seconds = LEASE_SECONDS
@@ -81,7 +84,7 @@ async def process_task_async(
 
         
         text = task.text
-        run_id = task.run_id
+    
 
     try:
         logger.info('Запускаем задачи')
@@ -243,7 +246,6 @@ async def calculate_result(
     for i, chunk in enumerate(chunks):
         await asyncio.sleep(TIME_CELERY_TASK)
         word = chunk.split()
-        logger.info('cмотрим на кол-во итераций: i=%i', i)
         word_count += len(word)
 
 

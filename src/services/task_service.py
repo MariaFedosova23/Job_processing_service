@@ -29,7 +29,7 @@ from src.services.validator_task import (
 from src.constants import ALLOWED_TYPES, MAX_FILE_SIZE
 
 logger = logging.getLogger('job_processing_service')
-EnqueueFn = Callable[[int], str]
+EnqueueFn = Callable[[int, str], str]
 
 
 @dataclass(frozen=True)
@@ -206,14 +206,18 @@ class TaskService:
             raise TaskCannotBeRetryError(task_id, existing.status)
 
         try:
-            celery_task_id = self._enqueue(task_id)
+            celery_task_id = self._enqueue(task_id, run_id)
             
-        except Exception:
+        except Exception as ex:
             logger.exception(
                 "Не удалось поставить задачу в очередь: task_id=%s", task_id,
                 extra={"event": "task_enqueue_failed", "task_id": task_id},
             )
-            await self.repo.update_status(task, Status.ERROR)
+            await self.repo.revert_to_error_status(
+                task_id,
+                run_id,
+                error=str(ex)
+            )
             raise
         logger.info(
             "Запущена обработка задачи: task_id=%s", task_id,
@@ -283,7 +287,7 @@ class TaskService:
         """
         Сохраняет результат и переводит PROCESSING → DONE.
         """
-        now = datetime.now(timezone.utc)
+
         task = await self.repo.save_result_and_complete(
             task_id,
             original_length=original_length,
@@ -302,7 +306,7 @@ class TaskService:
                 logger.info('Задача успешно переведена в CANCELLED из-за внешней отмены.')
                 
             else: 
-                logger.warning('Не удалось сохранить результат и подтвердить отмену. task_id=%s", task_id')
+                logger.warning('Не удалось сохранить результат и подтвердить отмену. task_id=%s', task_id)
             return
         logger.info(
             "Обработка завершена: task_id=%s", task_id,

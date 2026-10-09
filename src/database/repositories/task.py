@@ -225,7 +225,30 @@ class TaskRepository:
         task = result.scalar_one_or_none()
         await self.session.commit()
         return task
-
+    async def revert_to_error_status(
+        self,
+        task_id: int,
+        run_id: str,
+        error: str = 'Не удалось поставить задачу в очередь',
+    ) -> TaskDB | None:
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.status == Status.QUEUED)
+            .where(TaskDB.run_id == run_id)
+            .values(
+                status=Status.ERROR,
+                error=error,
+                run_id=None,
+                finished_at=func.now(),  
+            )
+            .returning(TaskDB)
+        )
+        result = await self.session.execute(stmt)
+        task = result.scalar_one_or_none()
+        await self.session.commit()
+        return task
+    
     async def mark_failed(
         self,
         task_id: int,
@@ -366,7 +389,12 @@ class TaskRepository:
         stmt = (
             update(TaskDB)
             .where(TaskDB.status == Status.CANCELLING)
-            .where(TaskDB.lease_until < func.now())
+            .where(
+                or_(
+                    TaskDB.lease_until.is_(None),
+                    TaskDB.lease_until < func.now()
+                ),
+            )
             .values(
                 status=Status.CANCELLED,
                 owner_token=None,

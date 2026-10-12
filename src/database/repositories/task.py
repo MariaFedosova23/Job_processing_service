@@ -8,7 +8,9 @@ from sqlalchemy import func
 
 from src.database.models.task import TaskDB, TaskResultDB
 from src.database.models.file import FileDB
-from src.enums import Status
+from src.database.models.outbox_tasks import OutboxTaskDB
+from src.enums import Status, OutboxStatus
+from src.constants import CELERY_TASK_PROCESS_NAME
 
 
 
@@ -164,90 +166,119 @@ class TaskRepository:
         await self.session.commit()
         return task
 
-    
-    async def mark_queued_new_task(
-            self,
-            task_id: int,
-            run_id: str
-    ) -> TaskDB | None:
-        stmt = (
-            update(TaskDB)
-                .where(TaskDB.id == task_id)
-                .where(TaskDB.status == Status.NEW)
-                .values(
-                    status=Status.QUEUED,
-                    error=None,
-                    run_id=run_id
-                )
-                .returning(TaskDB)
-        )
-        result = await self.session.execute(stmt)
-        task = result.scalar_one_or_none()
-        await self.session.commit()
-        return task
 
-    async def mark_queued_error_task(self, task_id: int, run_id: str) -> TaskDB | None:
-        stmt = (
-            update(TaskDB)
+    def _build_outbox(self, task_id: int, run_id: str) -> OutboxTaskDB:
+        """Создаёт ORM-объект outbox."""
+        return OutboxTaskDB(
+                task_name=CELERY_TASK_PROCESS_NAME,
+                payload={'task_id': task_id, 'run_id': run_id},
+                idempotency_key=f'{task_id}:{run_id}:process',
+                status=OutboxStatus.PENDING,
+            )
+
+
+    async def _transition_to_queued(
+        self,
+        task_id: int,
+        run_id: str,
+        *,
+        expected_status: Status
+    ) -> TaskDB | None:
+        """Переводит задачу в статус Queued и создаёт запись в Outbox"""
+        async with self.session.begin():
+            stmt = (
+                update(TaskDB)
                 .where(TaskDB.id == task_id)
-                .where(TaskDB.status == Status.ERROR)
+                .where(TaskDB.status == expected_status)
                 .values(
                     status=Status.QUEUED,
                     error=None,
                     run_id=run_id,
                 )
                 .returning(TaskDB)
-        )
-        result = await self.session.execute(stmt)
-        task = result.scalar_one_or_none()
-        await self.session.commit()
+            )
+            task = (await self.session.execute(stmt)).scalar_one_or_none()
+
+            if task is not None:
+                self.session.add(self._build_outbox(task_id, run_id))
+
         return task
-        
-    async def revert_to_new_status(
+
+    
+    async def mark_queued_task(
         self,
         task_id: int,
         run_id: str
     ) -> TaskDB | None:
-        """QUEUED -> NEW."""
-        stmt = (
-            update(TaskDB)
-            .where(TaskDB.id == task_id)
-            .where(TaskDB.status == Status.QUEUED)
-            .where(TaskDB.run_id == run_id)
-            .values(
-                status=Status.NEW,
-                run_id=None,
-                error=None,
-            )
-            .returning(TaskDB)
+        """NEW -> QUEUED -> запись в OUTBOX."""
+
+        return await self._transition_to_queued(
+            task_id,
+            run_id,
+            expected_status=Status.NEW,
         )
-        result = await self.session.execute(stmt)
-        task = result.scalar_one_or_none()
-        await self.session.commit()
-        return task
-    async def revert_to_error_status(
-        self,
-        task_id: int,
-        run_id: str,
-        error: str = 'Не удалось поставить задачу в очередь',
+        
+
+    async def mark_queued_error_task(
+        self, task_id: int, run_id: str
     ) -> TaskDB | None:
-        stmt = (
-            update(TaskDB)
-            .where(TaskDB.id == task_id)
-            .where(TaskDB.status == Status.QUEUED)
-            .where(TaskDB.run_id == run_id)
-            .values(
-                status=Status.ERROR,
-                error=error,
-                run_id=None,
-                finished_at=func.now(),  
-            )
-            .returning(TaskDB)
+        """ERROR -> QUEUED -> OUTBOX."""
+
+
+        return await self._transition_to_queued(
+            task_id,
+            run_id,
+            expected_status=Status.ERROR,
         )
-        result = await self.session.execute(stmt)
-        task = result.scalar_one_or_none()
-        await self.session.commit()
-        return task
+                        
+        
+            
+        
+    # async def revert_to_new_status(
+    #     self,
+    #     task_id: int,
+    #     run_id: str
+    # ) -> TaskDB | None:
+    #     """QUEUED -> NEW."""
+    #     stmt = (
+    #         update(TaskDB)
+    #         .where(TaskDB.id == task_id)
+    #         .where(TaskDB.status == Status.QUEUED)
+    #         .where(TaskDB.run_id == run_id)
+    #         .values(
+    #             status=Status.NEW,
+    #             run_id=None,
+    #             error=None,
+    #         )
+    #         .returning(TaskDB)
+    #     )
+    #     result = await self.session.execute(stmt)
+    #     task = result.scalar_one_or_none()
+    #     await self.session.commit()
+    #     return task
+    # async def revert_to_error_status(
+    #     self,
+    #     task_id: int,
+    #     run_id: str,
+    #     error: str = 'Не удалось поставить задачу в очередь',
+    # ) -> TaskDB | None:
+    #     stmt = (
+    #         update(TaskDB)
+    #         .where(TaskDB.id == task_id)
+    #         .where(TaskDB.status == Status.QUEUED)
+    #         .where(TaskDB.run_id == run_id)
+    #         .values(
+    #             status=Status.ERROR,
+    #             error=error,
+    #             run_id=None,
+    #             finished_at=func.now(),  
+    #         )
+    #         .returning(TaskDB)
+    #     )
+    #     result = await self.session.execute(stmt)
+    #     task = result.scalar_one_or_none()
+    #     await self.session.commit()
+    #     return task
     
     async def mark_failed(
         self,

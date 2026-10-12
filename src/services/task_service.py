@@ -20,6 +20,7 @@ from src.services.exceptions import (
     TaskCannotBeRetryError,
     TaskStateConflictError
 )
+
 from src.services.validator_task import (
     validate_task_can_be_cancelled,
     validate_transition_for_caller
@@ -35,7 +36,7 @@ EnqueueFn = Callable[[int, str], str]
 @dataclass(frozen=True)
 class StartProcessingResult:
     task: TaskDB
-    celery_task_id: str
+    run_id: str
 
 
 class TaskService:
@@ -138,7 +139,7 @@ class TaskService:
         """NEW -> QUEUED -> PROCESSING -> DONE."""
 
         run_id = uuid.uuid4().hex
-        task = await self.repo.mark_queued_new_task(task_id, run_id)
+        task = await self.repo.mark_queued_task(task_id, run_id)
 
         if task is None:
             existing = await self.repo.get(task_id)
@@ -155,34 +156,15 @@ class TaskService:
             )
             raise TaskCannotBeProcessedError(task_id, existing.status)
         
-        try:
-            celery_task_id = self._enqueue(task_id, run_id)
         
-        except Exception:
-            logger.exception(
-                'Не удалось поставить задачу в очередь: task_id=%s, run_id=%s',
-                task_id, run_id,
-                extra={'event': 'task_enqueue_failed', 'task_id': task_id},
-            )
-            reverted = await self.repo.revert_to_new_status(
-                task_id, run_id
-            )
-            if reverted is None:
-                logger.info(
-                    'Откат в NEW не выполнен: run_id устарел или статус изменился: task_id=%s, run_id=%s',
-                    task_id, run_id,
-                    extra={'event': 'task_revert_skipped', 'task_id': task_id},
-                )
-            raise
-
         logger.info(
-            'Задача поставлена в очередь: task_id=%s, celery_task_id=%s, run_id=%s',
-            task_id, celery_task_id, run_id,
+            'Задача поставлена в очередь: task_id=%s, run_id=%s',
+            task_id, run_id,
             extra={'event': 'task_processing_started', 'task_id': task_id},
         )
         return StartProcessingResult(
             task=task,
-            celery_task_id=celery_task_id
+            run_id=run_id
         )
 
     

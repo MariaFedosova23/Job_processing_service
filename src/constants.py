@@ -70,3 +70,9 @@ WORKER_TRANSITIONS: dict[str, set[str]] = {
     'queued':     {'processing'},
     'processing': {'done', 'error', 'queued'},
 }
+
+# database/models/outbox_tasks
+MAX_TASK_NAME = 50
+MAX_IDEMPOTENCY_KEY = 255
+
+

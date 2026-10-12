@@ -14,3 +14,9 @@ class Status(StrEnum):
 class Caller(StrEnum):
     API_USER = 'api_user'
     WORKER = 'worker'
+
+
+class OutboxStatus(StrEnum):
+    PENDING = 'pending'
+    SENT = 'sent'
+    FAILED = 'failed'

@@ -19,7 +19,7 @@ from src.constants import (
 from src.enums import OutboxStatus
 
 
-class OutboxTask(Base):
+class OutboxTaskDB(Base):
     __tablename__ = 'outbox_tasks'
     __table_args__ = (
         Index(
@@ -27,15 +27,20 @@ class OutboxTask(Base):
             'status',
             'next_retry_at',
             'created_at',
-            postgresql_where=text('status = "pending"'),
-        )
+            postgresql_where=text("status = 'pending'"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     task_name: Mapped[str] = mapped_column(String(MAX_TASK_NAME), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[OutboxStatus] = mapped_column(
-        SQLENUM(OutboxStatus, name='outbox_status', native_enum=True),
+        SQLENUM(
+            OutboxStatus,
+            name='outbox_status',
+            native_enum=True,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
         nullable=False,
         default=OutboxStatus.PENDING,
         server_default=OutboxStatus.PENDING.value
@@ -45,7 +50,9 @@ class OutboxTask(Base):
         unique=True,
         nullable=True
     )
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default='0'
+    )
     next_retry_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

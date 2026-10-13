@@ -14,9 +14,11 @@ class OutboxRepository:
         stmt = (
             select(OutboxTaskDB)
             .where(OutboxTaskDB.status == OutboxStatus.PENDING)
-            .or_(
-                OutboxTaskDB.next_retry_at.is_(None),
-                OutboxTaskDB.next_retry_at <= func.now(),
+            .where(
+                or_(
+                    OutboxTaskDB.next_retry_at.is_(None),
+                    OutboxTaskDB.next_retry_at <= func.now(),
+                )
             )
         .order_by(OutboxTaskDB.created_at)
         .limit(limit)

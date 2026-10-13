@@ -117,7 +117,7 @@ async def process_task(
     return TaskResponseProcessSchema(
         id=result.task.id,
         status=result.task.status,
-        celery_task_id=result.celery_task_id,
+        run_id=result.run_id,
     )
 
 @router.post(
@@ -133,7 +133,7 @@ async def retry_process_task(
     return TaskResponseProcessSchema(
         id=result.task.id,
         status=result.task.status,
-        celery_task_id=result.celery_task_id,
+        run_id=result.run_id,
     )
 
 

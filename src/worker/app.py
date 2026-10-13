@@ -13,13 +13,16 @@ from src.worker.config import (
     TASK_SERIALIZER,
     TIMEZONE,
 )
-from src.constants import TIME_CELERY_BEAT_IN_MINUTE
+from src.constants import TIME_CELERY_BEAT_IN_MINUTE, OUTBOX_RELAY_INTERVAL_SECONDS
 
 celery = Celery(
     'worker',
     broker=BROKER_URL,
     backend=RESULT_BACKEND,
-    include=['src.worker.tasks.tasks'],
+    include=[
+        'src.worker.tasks.tasks',
+        'src.worker.relay',
+    ],
 )
 
 celery.conf.update(
@@ -40,6 +43,10 @@ celery.conf.beat_schedule = {
     'sweep-state-cancelling': {
         'task': 'worker.sweep_stale_cancelling',
         'schedule': crontab(minute=f'*/{TIME_CELERY_BEAT_IN_MINUTE}'),
+    },
+    'relay-outbox': {
+        'task': 'worker.relay_outbox',
+        'schedule': OUTBOX_RELAY_INTERVAL_SECONDS,
     },
 }
 

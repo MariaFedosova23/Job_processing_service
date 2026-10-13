@@ -73,7 +73,7 @@ class TaskDetailStateSchema(TaskDetailSchema):
 class TaskResponseProcessSchema(BaseModel):
     id: int
     status: Status
-    celery_task_id: str
+    run_id: str
 
 
 

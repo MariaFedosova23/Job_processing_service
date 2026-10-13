@@ -16,13 +16,13 @@ logger = logging.getLogger('job_processing_service')
 
 @celery.task(name='worker.relay_outbox')
 def relay_outbox() -> None:
-    asyncio.run(_async_relay_outbox())
+    asyncio.run(async_relay_outbox())
 
-def _backoff(attempts: int) -> timedela:
+def _backoff(attempts: int) -> timedelta:
     seconds = min(2 ** attempts, OUTBOX_BACKOFF_CAP_SECONDS)
     return timedelta(seconds=seconds)
 
-async def _async_relay_outbox() -> None:
+async def async_relay_outbox() -> None:
     async with get_session() as session:
         repo = OutboxRepository(session)
 
@@ -30,11 +30,39 @@ async def _async_relay_outbox() -> None:
             rows = await repo.lock_pending_batch(limit=OUTBOX_BATCH_SIZE)
             if not rows:
                 return
+            now = datetime.now(timezone.utc)
             sent_count = 0
             failed_count = 0
             for row in rows:
-                celery.send_task(
-                    row.task_name,
-                    kwargs=row.payload,
-                    task_id=row.payload.get('run_id')
+                try:
+                    celery.send_task(
+                        row.task_name,
+                        kwargs=row.payload,
+                        # task_id=row.payload.get('run_id')
+                    )
+                except Exception as exc:
+                    row.attempts += 1
+                    row.last_error = str(exc)[:100]
+
+                    if row.attempts >= OUTBOX_MAX_ATTEMPTS:
+                        row.status = OutboxStatus.FAILED
+                        failed_count += 1
+                        logger.error(
+                            'Outbox: исчерпаны попытки: id=%s, task_id=%s, attempts=%s',
+                            row.id, row.payload.get('task_id'), row.attempts,
+                            extra={'event': 'outbox_failed', 'outbox_id': row.id},
+                        )
+                    else:
+                        row.next_retry_at = now + _backoff(row.attempts)
+                else:
+                    row.status = OutboxStatus.SENT
+                    row.sent_at = datetime.now()
+                    row.last_error = None
+                    sent_count += 1
+
+            if sent_count or failed_count:
+                logger.info(
+                    'Relay: обработано %s (sent=%s, failed=%s)',
+                    len(rows), sent_count, failed_count,
+                    extra={'event': 'outbox_relay_batch'},
                 )

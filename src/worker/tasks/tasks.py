@@ -17,8 +17,7 @@ from src.constants import (
     LEASE_SECONDS,
     SOFT_TIME,
     TIME_LIMIT,
-    CELERY_TASK_PROCESS_NAME
-
+    CELERY_TASK_PROCESS_NAME,
 )
 from src.services.task_service import TaskService
 from src.services.exceptions import ForbiddenWordsError, TaskProcessingError
@@ -28,7 +27,7 @@ logger = logging.getLogger('job_processing_service')
 
 @celery.task(
     bind=True,
-    name='worker.process_task',
+    name=CELERY_TASK_PROCESS_NAME,
     acks_late=True,
     autoretry_for=(OperationalError,),
     retry_backoff=True,
@@ -37,7 +36,6 @@ logger = logging.getLogger('job_processing_service')
     retry_jitter=True,
     soft_time_limit=SOFT_TIME,
     time_limit=TIME_LIMIT,
-    name=CELERY_TASK_PROCESS_NAME
 )
 def process_task(self, task_id: int, run_id: str) -> None:
     is_final_attempt = self.request.retries >= self.max_retries

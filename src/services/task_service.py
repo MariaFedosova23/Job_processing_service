@@ -2,8 +2,6 @@ import os
 import uuid
 from pathlib import Path
 import logging
-from typing import Callable
-from datetime import datetime, timezone
 from dataclasses import dataclass
 
 from fastapi import UploadFile
@@ -30,7 +28,7 @@ from src.services.validator_task import (
 from src.constants import ALLOWED_TYPES, MAX_FILE_SIZE
 
 logger = logging.getLogger('job_processing_service')
-EnqueueFn = Callable[[int, str], str]
+
 
 
 @dataclass(frozen=True)
@@ -40,9 +38,8 @@ class StartProcessingResult:
 
 
 class TaskService:
-    def __init__(self, repo: TaskRepository, enqueue: EnqueueFn | None = None):
+    def __init__(self, repo: TaskRepository):
         self.repo = repo
-        self._enqueue = enqueue or (lambda _: None)
 
     async def list_tasks(
             self,
@@ -187,25 +184,12 @@ class TaskService:
             )
             raise TaskCannotBeRetryError(task_id, existing.status)
 
-        try:
-            celery_task_id = self._enqueue(task_id, run_id)
-            
-        except Exception as ex:
-            logger.exception(
-                "Не удалось поставить задачу в очередь: task_id=%s", task_id,
-                extra={"event": "task_enqueue_failed", "task_id": task_id},
-            )
-            await self.repo.revert_to_error_status(
-                task_id,
-                run_id,
-                error=str(ex)
-            )
-            raise
+        
         logger.info(
             "Запущена обработка задачи: task_id=%s", task_id,
             extra={"event": "task_processing_retried", "task_id": task_id},
         )
-        return StartProcessingResult(task=task, celery_task_id=celery_task_id)
+        return StartProcessingResult(task=task, run_id=run_id)
 
     async def cancel_task(self, task_id) -> TaskDB:
         task = await self.get_or_raise(task_id)
@@ -376,7 +360,6 @@ class TaskService:
         final_path = Path(upload_dir) / internal_name
         final_path.write_bytes(contents)
    
-        # Создаём запись в БД
         file_db = await self.repo.create_file(
             task_id=task_id,
             original_name=file.filename,

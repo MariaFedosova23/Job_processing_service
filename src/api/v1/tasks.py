@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import Query, APIRouter, UploadFile, File, HTTPException
+from fastapi import Query, APIRouter, UploadFile, File
 
 from src.schemas.tasks import (
     TaskCreateSchema,

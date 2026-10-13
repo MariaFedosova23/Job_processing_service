@@ -7,7 +7,6 @@ from src.services.task_service import TaskService
 from src.services.health_service import HealthService
 from src.database.repositories.task import TaskRepository
 from src.database import get_db
-from src.worker.dispatcher import enqueue_process_task
 from src.database.repositories.health import HealthRepository
 
 
@@ -23,7 +22,7 @@ TaskRepoDep = Annotated[TaskRepository, Depends(get_task_repository)]
 
 
 def get_task_service(repo: TaskRepoDep) -> TaskService:
-    return TaskService(repo, enqueue=enqueue_process_task)
+    return TaskService(repo)
 
 
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]

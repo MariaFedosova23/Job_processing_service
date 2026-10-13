@@ -231,54 +231,6 @@ class TaskRepository:
             expected_status=Status.ERROR,
         )
                         
-        
-            
-        
-    # async def revert_to_new_status(
-    #     self,
-    #     task_id: int,
-    #     run_id: str
-    # ) -> TaskDB | None:
-    #     """QUEUED -> NEW."""
-    #     stmt = (
-    #         update(TaskDB)
-    #         .where(TaskDB.id == task_id)
-    #         .where(TaskDB.status == Status.QUEUED)
-    #         .where(TaskDB.run_id == run_id)
-    #         .values(
-    #             status=Status.NEW,
-    #             run_id=None,
-    #             error=None,
-    #         )
-    #         .returning(TaskDB)
-    #     )
-    #     result = await self.session.execute(stmt)
-    #     task = result.scalar_one_or_none()
-    #     await self.session.commit()
-    #     return task
-    # async def revert_to_error_status(
-    #     self,
-    #     task_id: int,
-    #     run_id: str,
-    #     error: str = 'Не удалось поставить задачу в очередь',
-    # ) -> TaskDB | None:
-    #     stmt = (
-    #         update(TaskDB)
-    #         .where(TaskDB.id == task_id)
-    #         .where(TaskDB.status == Status.QUEUED)
-    #         .where(TaskDB.run_id == run_id)
-    #         .values(
-    #             status=Status.ERROR,
-    #             error=error,
-    #             run_id=None,
-    #             finished_at=func.now(),  
-    #         )
-    #         .returning(TaskDB)
-    #     )
-    #     result = await self.session.execute(stmt)
-    #     task = result.scalar_one_or_none()
-    #     await self.session.commit()
-    #     return task
     
     async def mark_failed(
         self,

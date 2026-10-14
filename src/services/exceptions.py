@@ -92,3 +92,16 @@ class TaskStateConflictError(Exception):
             f'{expected_status}, но состояние уже изменилось'
         )
 
+
+class InvalidFileTypeError(Exception):
+    def __init__(self, content_type: str):
+        self.content_type = content_type
+        super().__init__(f'Неподдерживаемый тип файла {content_type}')
+
+                
+
+class FileTooLargeError(Exception):
+    def __init__(self, size: int, limit: int):
+        self.size = size
+        self.limit = limit
+        super().__init__(f'Файл превышает лимит {limit} байт (получено {size})')

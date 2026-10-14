@@ -8,6 +8,8 @@ from src.services.health_service import HealthService
 from src.database.repositories.task import TaskRepository
 from src.database import get_db
 from src.database.repositories.health import HealthRepository
+from src.storage.file_storage import FileStorage
+from src.storage.dependencies import get_file_storage
 
 
 
@@ -20,10 +22,10 @@ def get_task_repository(db: SessionDep) -> TaskRepository:
 
 TaskRepoDep = Annotated[TaskRepository, Depends(get_task_repository)]
 
+FileStorageDep = Annotated[FileStorage, Depends(get_file_storage)]
 
-def get_task_service(repo: TaskRepoDep) -> TaskService:
-    return TaskService(repo)
-
+def get_task_service(repo: TaskRepoDep, storage: FileStorageDep) -> TaskService:
+    return TaskService(repo, storage=storage)
 
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
 

@@ -47,7 +47,7 @@ MAX_FILE_SIZE = 1024 * 1024 * 10
 
 ALLOWED_TYPES = {
     'application/pdf', 'text/plain', 'image/png',
-    'image/jpeg',
+    'image/jpeg', 'image/jpg',
 }
 
 
@@ -77,6 +77,8 @@ MAX_IDEMPOTENCY_KEY = 255
 
 
 CELERY_TASK_PROCESS_NAME = 'worker.process_task'
+
+CELERY_TASK_GET_FILE_NAME = 'worker.get_file'
 
 OUTBOX_BATCH_SIZE = 20
 OUTBOX_MAX_ATTEMPTS = 10

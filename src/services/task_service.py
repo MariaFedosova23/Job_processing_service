@@ -11,6 +11,7 @@ from src.database.models.task import TaskDB
 from src.database.models.file import FileDB
 from src.schemas.tasks import TaskCreateSchema
 from src.database.repositories.task import TaskRepository
+from src.storage.file_storage import FileStorage
 from src.services.exceptions import (
     TaskNotFoundError,
     DuplicateExternalIdError,
@@ -18,10 +19,13 @@ from src.services.exceptions import (
     TaskCannotBeRetryError,
     TaskStateConflictError
 )
+from src.worker.dispatcher import enequeue_get_file
 
 from src.services.validator_task import (
     validate_task_can_be_cancelled,
-    validate_transition_for_caller
+    validate_transition_for_caller,
+    validate_file_size,
+    validate_file_type
 )
 
 
@@ -38,8 +42,10 @@ class StartProcessingResult:
 
 
 class TaskService:
-    def __init__(self, repo: TaskRepository):
+    def __init__(self, repo: TaskRepository, storage: FileStorage):
         self.repo = repo
+        self.storage = storage
+
 
     async def list_tasks(
             self,
@@ -334,39 +340,32 @@ class TaskService:
     async def upload_file(
         self,
         task_id: int,
-        file: UploadFile,
+        *,
+        filename: str,
+        content_type: str,
+        content: bytes,
+
     ) -> FileDB:
 
         task = await self.repo.get(task_id)
         if task is None:
             raise TaskNotFoundError(task_id)
-        # Проверка MIME
-        if file.content_type not in ALLOWED_TYPES:
-            raise ValueError(
-                f'Неподдерживаемый тип файла: {file.content_type}'
-            )
 
-        contents = await file.read()
-        size = len(contents)
-        if size > MAX_FILE_SIZE:
-            raise ValueError('Файл превышает лимит 10 МБ')
-        
-        upload_dir = os.getenv("UPLOAD_DIR", "/app/files")
-        Path(upload_dir).mkdir(parents=True, exist_ok=True)
-
-        suffix = Path(file.filename).suffix or ".bin"
-        internal_name = f"{uuid.uuid4().hex}{suffix}"
+        validate_file_type(content_type)
+        validate_file_size(len(content))
        
-        final_path = Path(upload_dir) / internal_name
-        final_path.write_bytes(contents)
+        suffix = Path(filename).suffix or '.bin'
+        internal_name = self.storage.save(content, suffix)
+       
    
         file_db = await self.repo.create_file(
             task_id=task_id,
-            original_name=file.filename,
+            original_name=filename,
             internal_name=internal_name,
-            mime_type=file.content_type,
-            size_bytes=size,
+            mime_type=content_type,
+            size_bytes=len(content),
         )
+        enequeue_get_file(task_id, internal_name)
 
         logger.info(
             "Файл загружен: task_id=%s, file_id=%s, internal_name=%s",

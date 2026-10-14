@@ -4,12 +4,14 @@ from src.constants import (
     ALLOWED_STATUS_TRANSITIONS,
     API_PATCH_TRANSITIONS,
     WORKER_TRANSITIONS,
+    ALLOWED_TYPES,
+    MAX_FILE_SIZE
 )
 from src.enums import Status, Caller
 from src.services.exceptions import (
     InvalidStatusTransitionError, TaskCannotBeProcessedError,
     TaskCannotBeCancelledError, TaskCannotBeRetryError,
-    TransitionForbiddenError, TaskStateConflictError
+    TransitionForbiddenError, InvalidFileTypeError, FileTooLargeError
 )
 
 logger = logging.getLogger('job_processing_service')
@@ -95,5 +97,15 @@ def validate_task_can_be_cancelled(task_id: int, current_status: str) -> None:
         )
         
         raise TaskCannotBeCancelledError(task_id, current_status)
+
+
+def validate_file_type(content_type: str) -> None:
+    if content_type not in ALLOWED_TYPES:
+        raise InvalidFileTypeError(content_type)
+
+def validate_file_size(size: int) -> None:
+    if size >= MAX_FILE_SIZE:
+        raise FileTooLargeError(size, MAX_FILE_SIZE)
+
 
 

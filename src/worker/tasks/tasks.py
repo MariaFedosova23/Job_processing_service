@@ -18,6 +18,7 @@ from src.constants import (
     SOFT_TIME,
     TIME_LIMIT,
     CELERY_TASK_PROCESS_NAME,
+    CELERY_TASK_GET_FILE_NAME
 )
 from src.services.task_service import TaskService
 from src.services.exceptions import ForbiddenWordsError, TaskProcessingError
@@ -269,7 +270,7 @@ async def async_sweep_stale_cancelling():
 
 @celery.task(
     bind=True,
-    name='worker.get_file',
+    name=CELERY_TASK_GET_FILE_NAME,
     acks_late=True,
     autoretry_for=(OperationalError,),
     retry_backoff=True,

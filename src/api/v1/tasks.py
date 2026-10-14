@@ -18,7 +18,7 @@ from src.constants import (
     TASK_PRIORITY_LOW,
     
 )
-from src.api.v1.dependencies import TaskServiceDep
+from src.api.v1.dependencies import TaskServiceDep, FileStorageDep
 from src.enums import Status, Caller
 from src.schemas.file import FileResponse
 
@@ -159,5 +159,11 @@ async def upload_file(
     service: TaskServiceDep,
     file: UploadFile = File(...),
 ):
-    file_db = await service.upload_file(task_id, file)
+    content = await file.read()
+    file_db = await service.upload_file(
+        task_id=task_id,
+        filename=file.filename,
+        content_type=file.content_type,
+        content=content,
+    )
     return file_db

@@ -25,6 +25,7 @@ from src.constants import (
 )
 from src.services.task_service import TaskService
 from src.services.exceptions import ForbiddenWordsError, TaskProcessingError
+from src.enums import TaskOutcome
 
 logger = logging.getLogger('job_processing_service')
 
@@ -33,7 +34,7 @@ logger = logging.getLogger('job_processing_service')
     bind=True,
     name=CELERY_TASK_PROCESS_NAME,
     acks_late=True,
-    autoretry_for=(OperationalError,),
+    autoretry_for=(OperationalError, TimeoutError, ConnectionError),
     retry_backoff=True,
     retry_backoff_max=RETRY_BACKOFF_MAX,
     max_retries=MAX_TRIES,
@@ -41,38 +42,11 @@ logger = logging.getLogger('job_processing_service')
     soft_time_limit=SOFT_TIME,
     time_limit=TIME_LIMIT,
 )
-def process_task(self, task_id: int, run_id: str) -> None:
-
-    is_final_attempt = self.request.retries >= self.max_retries
-    celery_task_id = self.request.id
-
-    asyncio.run(
-        process_task_async(
-            task_id,
-            run_id=run_id,
-            celery_task_id=celery_task_id,
-            attempt=self.request.retries,
-            is_final_attempt=is_final_attempt,
-        )
-    )
-
-@celery.task(
-    bind=True,
-    name=CELERY_TASK_PROCESS_NAME,
-    acks_late=True,
-    autoretry_for=(OperationalError,),
-    retry_backoff=True,
-    retry_backoff_max=RETRY_BACKOFF_MAX,
-    max_retries=MAX_TRIES,
-    retry_jitter=True,
-    soft_time_limit=SOFT_TIME,
-    time_limit=TIME_LIMIT,
-)
-def process_task(self, task_id: int, run_id: str) -> None:
+def process_task(self, task_id: int, run_id: str) -> str:
     is_final_attempt = self.request.retries >= self.max_retries
     celery_task_id = self.request.id
     
-    asyncio.run(
+    outcome = asyncio.run(
         process_task_async(
             task_id,
             run_id=run_id,
@@ -81,6 +55,8 @@ def process_task(self, task_id: int, run_id: str) -> None:
             is_final_attempt=is_final_attempt,
         )
     )
+    return outcome.value
+
 
 async def process_task_async(
         task_id: int,
@@ -89,181 +65,198 @@ async def process_task_async(
         attempt: int = 0,
         is_final_attempt: bool = False,
         
-) -> None:
+) -> TaskOutcome:
     owner_token: str | None = None
-    
-    logger.info(
-        "Начало обработки задачи: task_id=%s, celery_task_id=%s",
-        task_id, celery_task_id,
-        extra={'event': 'task_processing_started', 'task_id': task_id},
-    )
-    owner_token = str(uuid.uuid4())
-    loop = asyncio.get_running_loop()
-    claim_started = loop.time()
+    try:
+        logger.info(
+            "Начало обработки задачи: task_id=%s, celery_task_id=%s",
+            task_id, celery_task_id,
+            extra={'event': 'task_processing_started', 'task_id': task_id},
+        )
+        owner_token = str(uuid.uuid4())
+        loop = asyncio.get_running_loop()
+        claim_started = loop.time()
+        try:
+            async with get_session() as session:
+                service = TaskService(
+                    TaskRepository(session)
+                )
+                task = await service.begin_processing(
+                    task_id,
+                    run_id,
+                    allow_processing=attempt > 0,
+                    owner_token=owner_token,
+                    lease_seconds = LEASE_SECONDS
+                )
+                if task is None:
+                    return TaskOutcome.SKIPPED
 
-    async with get_session() as session:
-        service = TaskService(
-            TaskRepository(session)
-        )
-        task = await service.begin_processing(
-            task_id,
-            run_id,
-            allow_processing=attempt > 0,
-            owner_token=owner_token,
-            lease_seconds = LEASE_SECONDS
-        )
-        if task is None:
-            return None
+                text = task.text
+
+        except OperationalError:
+            logger.warning(
+                'БД недоступна на этапе захвата: task_id=%s', task_id
+            )
+            raise
+            
+
+        try:
+            original_length, word_count = await run_with_lease(
+                work=calculate_result(text),
+                guard=watch_lease(
+                    task_id,
+                    owner_token,
+                    initial_deadline=claim_started + LEASE_SECONDS,
+                    lease_seconds=LEASE_SECONDS,
+                ),
+
+            )
+        except LeaseLostError:
+            cancelled = await safe_confirm_cancellation(
+                task_id,
+                owner_token=owner_token,
+            )
+            if cancelled:
+                logger.info(
+                    "Задача отменена и подтверждена: task_id=%s",
+                    task_id,
+                    extra={'event': 'task_cancelled', 'task_id': task_id},
+                )
+                return TaskOutcome.CANCELLED
+            else:
+                logger.warning(
+                    "Обработка прекращена: владение потеряно: task_id=%s",
+                    task_id,
+                    extra={'event': 'task_result_dropped', 'task_id': task_id},
+                )
+            return TaskOutcome.SKIPPED
+            
+
+        except ForbiddenWordsError as exc:
+            logger.warning(
+                "Бизнес-ошибка обработки: task_id=%s, error=%s",
+                task_id, exc,
+                extra={
+                    'event': 'task_processing_business_error',
+                    'task_id': task_id
+                    
+                },
+            )
+            await save_fail(
+                task_id,
+                owner_token=owner_token,
+                error=str(exc)
+            )
+            return TaskOutcome.REJECTED
+        
+
+        except (TimeoutError, ConnectionError) as exc:
+            logger.warning(
+                'Временный сбой: task_id=%s, error=%s', task_id, exc
+            )
+            await safe_release(
+                task_id, owner_token
+            )
+            raise
 
         
-        text = task.text
-    
-
-    try:
-        original_length, word_count = await run_with_lease(
-            work=calculate_result(text),
-            guard=watch_lease(
+        except Exception as exc:
+            logger.exception(
+                'Непредвиденная ошибка во время вычисления: task_id=%s',
                 task_id,
-                owner_token,
-                initial_deadline=claim_started + LEASE_SECONDS,
-                lease_seconds=LEASE_SECONDS,
-            ),
-
-        )
-    except LeaseLostError:
-        cancelled = await safe_confirm_cancellation(
-            task_id,
-            owner_token=owner_token,
-        )
-        if cancelled:
-            logger.info(
-                "Задача отменена и подтверждена: task_id=%s",
-                task_id,
-                extra={'event': 'task_cancelled', 'task_id': task_id},
+                extra={
+                    'event': 'task_compute_unexpected_error',
+                    'task_id': task_id
+                },
             )
-        else:
+            await save_fail(task_id, owner_token, f'Внутренняя ошибка: {type(exc).__name__}')
+            raise
+
+
+        try:
+            async with get_session() as session:
+                service = TaskService(
+                    TaskRepository(session)
+                )
+                saved = await service.complete_processing(
+                    task_id,
+                    owner_token=owner_token,
+                    original_length=original_length,
+                    word_count=word_count,
+                    run_id=run_id,
+                )
+        except OperationalError:
+            if is_final_attempt:
+                logger.exception(
+                    'Исчерпаны попытки обработки: task_id=%s', task_id,
+                    extra={
+                        'event': 'task_retries_exhausted',
+                        'task_id': task_id
+                    },
+
+                )
+                await save_fail(
+                    task_id, owner_token, 'БД недоступна после всех попыток'
+                )
+                raise
+
+            await safe_release(task_id, owner_token)
+            raise
+
+        except TaskProcessingError as exc:
             logger.warning(
-                "Обработка прекращена: владение потеряно: task_id=%s",
+                "Бизнес-ошибка обработки: task_id=%s, error=%s",
+                task_id, exc,
+                extra={
+                    'event': 'task_processing_business_error',
+                    'task_id': task_id
+                },
+            )
+            await save_fail(
+                task_id,
+                owner_token=owner_token,
+                error=str(exc)
+            )
+            return TaskOutcome.REJECTED
+
+
+        except Exception as exc:
+            logger.exception(
+                'Непредвиденная ошибка обработки: task_id=%s, celery_task_id=%s',
+                task_id, celery_task_id,
+                extra={
+                    'event': 'task_processing_unexpected_error', 'task_id': task_id
+                },
+            )
+            await save_fail(
+                task_id,
+                owner_token=owner_token,
+                error=f'Внутренняя ошибка: {type(exc).__name__}',
+            )
+            raise
+        
+        if saved is None:
+            logger.warning(
+                'Не удалось сохранить результат — lease истёк или владение потеряно: task_id=%s',
                 task_id,
                 extra={'event': 'task_result_dropped', 'task_id': task_id},
             )
-        return 
-        
+            return TaskOutcome.SKIPPED
 
-    except ForbiddenWordsError as exc:
-        logger.warning(
-            "Бизнес-ошибка обработки: task_id=%s, error=%s",
-            task_id, exc,
-            extra={
-                'event': 'task_processing_business_error',
-                'task_id': task_id
-                
-            },
-        )
-        await save_fail(
-            task_id,
-            owner_token=owner_token,
-            error=str(exc)
-        )
-        return
-    
-
-    except (TimeoutError, ConnectionError) as exc:
-        logger.warning(
-            'Временный сбой: task_id=%s, error=%s', task_id, exc
-        )
-        await safe_release(
-            task_id, owner_token
-        )
-        raise
-
-    
-    except Exception as exc:
-        logger.exception(
-            'Непредвиденная ошибка во время вычисления: task_id=%s',
-            task_id,
-            extra={
-                'event': 'task_compute_unexpected_error',
-                'task_id': task_id
-            },
-        )
-        await save_fail(task_id, owner_token, f'Внутренняя ошибка: {type(exc).__name__}')
-        return
-
-
-    try:
-        async with get_session() as session:
-            service = TaskService(
-                TaskRepository(session)
-            )
-            saved = await service.complete_processing(
-                task_id,
-                owner_token=owner_token,
-                original_length=original_length,
-                word_count=word_count,
-                run_id=run_id,
-            )
-    except OperationalError:
-        if is_final_attempt:
-            logger.exception(
-                'Исчерпаны попытки обработки: task_id=%s', task_id,
-                extra={
-                    'event': 'task_retries_retries_exhausted',
-                },
-
-            )
-            await save_fail(
-                task_id, owner_token, 'БД недоступна после всех попыток'
-            )
-            return
-
-        await safe_release(task_id, owner_token)
-        raise
-
-    except TaskProcessingError as exc:
-        logger.warning(
-            "Бизнес-ошибка обработки: task_id=%s, error=%s",
-            task_id, exc,
-            extra={
-                'event': 'task_processing_business_error',
-            },
-        )
-        await save_fail(
-            task_id,
-            owner_token=owner_token,
-            error=str(exc)
-        )
-        return
-
-
-    except Exception as exc:
-        logger.exception(
-            'Непредвиденная ошибка обработки: task_id=%s, celery_task_id=%s',
+        logger.info(
+            "Обработка завершена успешно: task_id=%s, celery_task_id=%s",
             task_id, celery_task_id,
-            extra={
-                'event': 'task_processing_unexpected_error', 'task_id': task_id
-            },
+            extra={'event': 'task_processing_done', 'task_id': task_id},
         )
-        await save_fail(
-            task_id,
-            owner_token=owner_token,
-            error=f'Внутренняя ошибка: {type(exc).__name__}',
-        )
-        return
+        return TaskOutcome.DONE
     
-    if saved is None:
-        logger.warning(
-            'Не удалось сохранить результат — lease истёк или владение потеряно: task_id=%s',
-            task_id,
-            extra={'event': 'task_result_dropped', 'task_id': task_id},
-        )
-        return
-
-    logger.info(
-        "Обработка завершена успешно: task_id=%s, celery_task_id=%s",
-        task_id, celery_task_id,
-        extra={'event': 'task_processing_done', 'task_id': task_id},
-    )
+    except SoftTimeLimitExceeded:
+        if owner_token is not None:
+            try: 
+                await save_fail(task_id, owner_token, 'Превышено время обработки')
+            except Exception:
+                logger.exception('Не удалось записать ERROR при таймауте: task_id=%s', task_id)
+        raise
     
 
 async def calculate_result(

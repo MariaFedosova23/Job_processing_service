@@ -42,7 +42,7 @@ async def async_relay_outbox() -> None:
                     )
                 except Exception as exc:
                     row.attempts += 1
-                    row.last_error = str(exc)[:100]
+                    row.last_error = str(exc)
 
                     if row.attempts >= OUTBOX_MAX_ATTEMPTS:
                         row.status = OutboxStatus.FAILED
@@ -54,6 +54,11 @@ async def async_relay_outbox() -> None:
                         )
                     else:
                         row.next_retry_at = now + _backoff(row.attempts)
+                        logger.warning(
+                            'Outbox: повтор через %ss: id=%s, attempts=%s, error=%s',
+                            row.id, row.attempts, exc,
+                            extra={'event': 'outbox_retry', 'outbox_id': row.id},
+                        )
                 else:
                     row.status = OutboxStatus.SENT
                     row.sent_at = datetime.now()

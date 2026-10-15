@@ -26,16 +26,16 @@ async def watch_lease(
     while True:
         remaining = deadline - loop.time()
         if remaining <= 0:
-            raise LeaseLostError("Истёк срок владения")
+            raise LeaseLostError('Истёк срок владения')
 
         await asyncio.sleep(min(INTERVAL, remaining))
 
         remaining = deadline - loop.time()
         if remaining <= 0:
-            raise LeaseLostError("Истёк срок владения")
+            raise LeaseLostError('Истёк срок владения')
 
         renewal_started = loop.time()
-        logger.info('renewal_started=%s', renewal_started)
+        logger.debug('renewal_started=%s', renewal_started)
 
         try:
             async with asyncio.timeout(min(5.0, remaining)):
@@ -70,12 +70,17 @@ async def run_with_lease(work, guard):
             {work_task, guard_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
+        if work_task.done() and not work_task.cancelled():
+            exc = work_task.exception()
+            if exc is not None:
+                raise exc
         
         if guard_task.done():
 
             await guard_task
 
         return await work_task
+    
 
     finally:
 

@@ -20,3 +20,13 @@ class OutboxStatus(StrEnum):
     PENDING = 'pending'
     SENT = 'sent'
     FAILED = 'failed'
+
+
+class TaskOutcome(StrEnum):
+    """Ожидаемый исход выполнения Celery-задачи."""
+
+    DONE = 'done'
+    CANCELLED = 'cancelled'
+    SKIPPED = 'skipped'
+    REJECTED = 'rejected'
+    

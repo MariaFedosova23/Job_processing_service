@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from src.services.exceptions import (
@@ -12,9 +12,11 @@ from src.services.exceptions import (
     TaskCannotBeCancelledError,
     TransitionForbiddenError,
     TaskStateConflictError,
+    InvalidFileTypeError,
+    FileTooLargeError
 )
 
-logger = logging.getLogger("job_processing_service")
+logger = logging.getLogger('job_processing_service')
 
 
 async def task_not_found_handler(request: Request, exc: TaskNotFoundError):
@@ -107,6 +109,40 @@ async def conflict_handler(request: Request, exc: TaskStateConflictError):
         },
     )
 
+async def handle_invalid_file_type(
+    request: Request, exc: InvalidFileTypeError
+) -> JSONResponse:
+    logger.warning(
+        'Неподдерживаемый тип файла: content_type=%s',
+        exc.content_type,
+        extra={'event': 'invalid_file_type'},
+    )
+    return JSONResponse(
+        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        content={
+            "detail": str(exc),
+            "content_type": exc.content_type,
+        },
+    )
+
+
+async def handle_file_too_large(
+    request: Request, exc: FileTooLargeError
+) -> JSONResponse:
+    logger.warning(
+        'Файл превышает лимит: size=%s, limit=%s',
+        exc.size, exc.limit,
+        extra={'event': 'file_too_large'},
+    )
+    return JSONResponse(
+        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        content={
+            "detail": str(exc),
+            "size": exc.size,
+            "limit": exc.limit,
+        },
+    )
+
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Регистрирует все обработчики доменных исключений."""
@@ -131,6 +167,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         TaskStateConflictError, conflict_handler
     )
+    app.add_exception_handler(InvalidFileTypeError, handle_invalid_file_type)
+    app.add_exception_handler(FileTooLargeError, handle_file_too_large)
 
 
 

@@ -18,7 +18,7 @@ from src.constants import (
     TASK_PRIORITY_LOW,
     
 )
-from src.api.v1.dependencies import TaskServiceDep, FileStorageDep
+from src.api.v1.dependencies import TaskServiceDep, FileServiceDep
 from src.enums import Status, Caller
 from src.schemas.file import FileResponse
 
@@ -156,7 +156,7 @@ async def cancel_process_task(
 )
 async def upload_file(
     task_id: int,
-    service: TaskServiceDep,
+    service: FileServiceDep,
     file: UploadFile = File(...),
 ):
     content = await file.read()

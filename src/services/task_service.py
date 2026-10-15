@@ -1,17 +1,15 @@
 import os
 import uuid
-from pathlib import Path
+
 import logging
 from dataclasses import dataclass
 
-from fastapi import UploadFile
 
 from src.enums import Caller, Status
 from src.database.models.task import TaskDB
 from src.database.models.file import FileDB
 from src.schemas.tasks import TaskCreateSchema
 from src.database.repositories.task import TaskRepository
-from src.storage.file_storage import FileStorage
 from src.services.exceptions import (
     TaskNotFoundError,
     DuplicateExternalIdError,
@@ -19,17 +17,15 @@ from src.services.exceptions import (
     TaskCannotBeRetryError,
     TaskStateConflictError
 )
-from src.worker.dispatcher import enequeue_get_file
+
 
 from src.services.validator_task import (
     validate_task_can_be_cancelled,
     validate_transition_for_caller,
-    validate_file_size,
-    validate_file_type
 )
 
 
-from src.constants import ALLOWED_TYPES, MAX_FILE_SIZE
+
 
 logger = logging.getLogger('job_processing_service')
 
@@ -42,9 +38,8 @@ class StartProcessingResult:
 
 
 class TaskService:
-    def __init__(self, repo: TaskRepository, storage: FileStorage):
+    def __init__(self, repo: TaskRepository):
         self.repo = repo
-        self.storage = storage
 
 
     async def list_tasks(
@@ -333,46 +328,3 @@ class TaskService:
                 extra={"event": "task_released_for_retry", "task_id": task_id},
             )
         return task
-
-
-
-
-    async def upload_file(
-        self,
-        task_id: int,
-        *,
-        filename: str,
-        content_type: str,
-        content: bytes,
-
-    ) -> FileDB:
-
-        task = await self.repo.get(task_id)
-        if task is None:
-            raise TaskNotFoundError(task_id)
-
-        validate_file_type(content_type)
-        validate_file_size(len(content))
-       
-        suffix = Path(filename).suffix or '.bin'
-        internal_name = self.storage.save(content, suffix)
-       
-   
-        file_db = await self.repo.create_file(
-            task_id=task_id,
-            original_name=filename,
-            internal_name=internal_name,
-            mime_type=content_type,
-            size_bytes=len(content),
-        )
-        enequeue_get_file(task_id, internal_name)
-
-        logger.info(
-            "Файл загружен: task_id=%s, file_id=%s, internal_name=%s",
-            task_id, file_db.id, internal_name,
-            extra={"event": "file_uploaded", "task_id": task_id, "file_id": file_db.id},
-        )
-        from src.worker.tasks.tasks import get_file
-        get_file.delay(task_id, internal_name)
-        
-        return file_db

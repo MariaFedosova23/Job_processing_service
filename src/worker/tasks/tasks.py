@@ -343,7 +343,13 @@ async def safe_confirm_cancellation(task_id, owner_token):
     max_retries=MAX_TRIES,
     retry_jitter=True
 )
-async def get_file(self, task_id: int, internal_name: str) -> dict | None:
+def get_file(self, task_id, internal_name):
+    return asyncio.run(
+        get_file_async(task_id, internal_name)
+    )
+
+
+async def get_file_async(task_id: int, internal_name: str) -> dict | None:
     upload_dir = os.getenv("UPLOAD_DIR", "/app/files")
     file_path = Path(upload_dir) / internal_name
     if not file_path.exists():

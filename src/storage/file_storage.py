@@ -1,6 +1,10 @@
 import os
 import uuid
 from pathlib import Path
+import logging
+
+logger = logging.getLogger('job_processing_service')
+
 
 class FileStorage:
     """Абстракция над файловой системой для загруженных файлов."""
@@ -17,3 +21,11 @@ class FileStorage:
         path = self.base_dir / internal_name
         path.write_bytes(content)
         return internal_name
+
+
+    def delete(self, internal_name: str) -> None:
+        path = self.base_dir / internal_name
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            logger.warning('Файл уже удален: %s', internal_name)

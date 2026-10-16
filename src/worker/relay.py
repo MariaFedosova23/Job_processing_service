@@ -38,7 +38,6 @@ async def async_relay_outbox() -> None:
                     celery.send_task(
                         row.task_name,
                         kwargs=row.payload,
-                        # task_id=row.payload.get('run_id')
                     )
                 except Exception as exc:
                     row.attempts += 1

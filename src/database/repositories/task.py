@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, update, and_, or_
+from sqlalchemy import select, literal, update, and_, or_, String, Integer
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +10,10 @@ from src.database.models.task import TaskDB, TaskResultDB
 from src.database.models.file import FileDB
 from src.database.models.outbox_tasks import OutboxTaskDB
 from src.enums import Status, OutboxStatus
-from src.constants import CELERY_TASK_PROCESS_NAME
+from src.constants import (
+    CELERY_TASK_PROCESS_NAME,
+    CELERY_TASK_GET_FILE_NAME
+)
 
 
 
@@ -391,24 +394,66 @@ class TaskRepository:
         await self.session.commit()
         return tasks_ids
 
-    async def create_file(
+    
+    def build_outbox_get_file(
+            self,
+            task_id: int,
+            internal_name: str
+        ) -> OutboxTaskDB:
+        return OutboxTaskDB(
+            task_name=CELERY_TASK_GET_FILE_NAME,
+            payload={'task_id': task_id, 'internal_name': internal_name},
+            idempotency_key=f'{task_id}: {internal_name}:get_file',
+            status=OutboxStatus.PENDING,
+        )
+    async def create_file_with_outbox(
         self,
-        task_id: int | None,
+        task_id: int,
         original_name: str,
         internal_name: str,
         mime_type: str,
         size_bytes: int,
-    ) -> FileDB:
-        file_obj = FileDB(
-            task_id=task_id,
-            original_name=original_name,
-            internal_name=internal_name,
-            mime_type=mime_type,
-            size_bytes=size_bytes,
-        )
-        self.session.add(file_obj)
-        await self.session.commit()
-        await self.session.refresh(file_obj)
-        return file_obj
+    ) -> FileDB | None:
+        """
+        Создаёт файл (если задача существует) и ставит outbox-запись.
+        Возвращает None, если задачи уже нет.
+        """
+        async with self.session.begin():
+            stmt = (
+                insert(FileDB).from_select(
+                    ['task_id', 'original_name', 'internal_name', 'mime_type', 'size_bytes'],
+                    select(
+                        literal(task_id, Integer),
+                        literal(original_name, String(255)),
+                        literal(internal_name, String(255)),
+                        literal(mime_type, String(100)),
+                        literal(size_bytes, Integer),
+                    ).where(
+                        select(TaskDB.id).where(TaskDB.id == task_id).exists()
+                    ),
+                )
+                .returning(FileDB)
+            )
+            file_db = (await self.session.execute(stmt)).scalar_one_or_none()
+            if file_db is not None:
+                self.session.add(
+                    self.build_outbox_get_file(
+                        task_id, internal_name
+                    )
+                )
+            return file_db
+
+                    
+        # file_obj = FileDB(
+        #     task_id=task_id,
+        #     original_name=original_name,
+        #     internal_name=internal_name,
+        #     mime_type=mime_type,
+        #     size_bytes=size_bytes,
+        # )
+        # self.session.add(file_obj)
+        # await self.session.commit()
+        # await self.session.refresh(file_obj)
+        # return file_obj
 
         

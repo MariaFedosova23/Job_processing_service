@@ -52,3 +52,7 @@ def get_file_service(
 
 
 FileServiceDep = Annotated[FileService, Depends(get_file_service)]
+
+
+def get_current_user():
+    pass

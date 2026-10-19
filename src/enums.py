@@ -29,4 +29,10 @@ class TaskOutcome(StrEnum):
     CANCELLED = 'cancelled'
     SKIPPED = 'skipped'
     REJECTED = 'rejected'
-    
+
+
+class Roles(StrEnum):
+    """Роль пользователя."""
+    ADMIN = 'admin'
+    OPERATOR = 'operator'
+    VIEWER = 'viewer'

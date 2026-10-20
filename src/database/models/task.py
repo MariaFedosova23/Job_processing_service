@@ -95,6 +95,12 @@ class TaskDB(Base):
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey('users.id', ondelete='CASCADE'),
+        nullable=False
+    )
+    owner: Mapped['UserDB'] = relationship(back_populates='tasks')
+
     files: Mapped[list['FileDB']] = relationship(
         back_populates='task',
         cascade="all, delete-orphan"

@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from authx import TokenPayload
 from src.schemas.users import UserLoginSchema, UserLoginResponse
 from src.config import security
-
+from src.api.v1.dependencies import get_current_user
+from src.database.models.users import UserDB
 logger = logging.getLogger('job_processing_service')
 
 router = APIRouter(prefix='/api/v1/auth', tags=['users'])
@@ -37,11 +38,15 @@ async def create_user(
     
 
 @router.get('/me')
-def get_me(
-    payload: TokenPayload = Depends(security.access_token_required)
+async def get_me(
+    current_user: UserDB = Depends(get_current_user)
 ):
-    return {
-        'user_id': payload.sub,
-        'role': payload.extra_dict.get('role'),
-        'expires_at': payload.exp.isoformat() if payload.exp else None,
-    }
+    return UserDB
+#     return {
+#         'user_id': payload.sub,
+#         'role': payload.extra_dict.get('role'),
+#         'expires_at': payload.exp.isoformat() if payload.exp else None,
+#     }
+
+
+# @router

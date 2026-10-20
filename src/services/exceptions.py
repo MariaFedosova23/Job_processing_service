@@ -4,6 +4,12 @@ class DomainError(Exception):
     """Базовое доменное исключение — общий родитель для всех наших ошибок."""
 
 
+class UserNotFound(DomainError):
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+        super().__init__(f'Пользователь {user_id} не найден')
+
+
 class TaskNotFoundError(DomainError):
     def __init__(self, task_id: int) -> None:
         self.task_id = task_id

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import (
     CheckConstraint,
     func,
@@ -11,7 +11,8 @@ from sqlalchemy import (
 
 from src.database import Base
 from src.constants import (
-    MAX_LENGTH_USERNAME
+    MAX_LENGTH_USERNAME,
+    MAX_LENGTH_PASSWORD_HASH
 )
 from src.enums import Roles
 
@@ -30,8 +31,10 @@ class UserDB(Base):
         nullable=False
     )
     password_hash: Mapped[str] = mapped_column(
-        String()
+        String(MAX_LENGTH_PASSWORD_HASH)
+
     )
+    
     role: Mapped[Roles] = mapped_column(
         SQLEnum(
             Roles,
@@ -51,5 +54,7 @@ class UserDB(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False
-
+    )
+    tasks: Mapped[list['TaskDB']] = relationship(
+        back_populates='owner'
     )

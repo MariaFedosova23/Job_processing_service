@@ -64,6 +64,17 @@ class TaskService:
             raise TaskNotFoundError(task_id)
         return task
 
+    async def get_task_for_user(
+        self,
+        task_id: int,
+        current_user_id: int,  
+    ) -> TaskDB:
+        task = self.repo.get_owned_task(
+            task_id,
+            current_user_id,
+        )
+        return task
+
     async def create(self, data: TaskCreateSchema) -> TaskDB:
         existing = await self.repo.get_by_external_id(data.external_id)
         if existing is not None:

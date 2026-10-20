@@ -394,6 +394,19 @@ class TaskRepository:
         await self.session.commit()
         return tasks_ids
 
+    async def get_owned_task(
+        self,
+        task_id: int,
+        current_user_id: int
+    ) -> TaskDB:
+        
+        task = self.get(task_id)
+        if not task:
+            raise ValueError('Task not found')
+        if task.owner_id != current_user_id:
+            raise PermissionError('Acces denied: ')
+        return task
+
     
     def build_outbox_get_file(
             self,

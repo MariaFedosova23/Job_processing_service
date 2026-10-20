@@ -21,6 +21,7 @@ from src.constants import (
 from src.api.v1.dependencies import TaskServiceDep, FileServiceDep
 from src.enums import Status, Caller
 from src.schemas.file import FileResponse
+from src.auth.dependencies import get_current_user, require_scopes
 
 
 logger = logging.getLogger('job_processing_service')

@@ -50,18 +50,17 @@ class UserService:
         )
         return user
 
-
-    async def list_tasks(
+    async def list_users(
         self,
         *,
         role: Roles | None,
         is_active: bool | None,
         limit,
         offset,
-        ) -> list[UserDB]:
-            return await self.repo.list_filtered(
-                role=role, is_active=is_active, limit=limit, offset=offset,
-            )
+    ) -> list[UserDB]:
+        return await self.repo.list_filtered(
+            role=role, is_active=is_active, limit=limit, offset=offset,
+        )
 
 
     async def get_or_raise(self, user_id: int) -> UserDB:
@@ -75,19 +74,28 @@ class UserService:
         return user
 
 
-    async def change_status(
+    async def patch_user(
         self,
         user_id: int,
+        *,
+        role: Roles | None = None,
+        is_active: bool | None = None,
         
     ) -> UserDB:
         user = await self.get_or_raise(user_id)
-      
+        values: dict = {}
+        if role is not None:
+            values['role'] = role
+        if is_active is not None:
+            values['is_active'] = is_active
+        if not values:
+            return user
+        
         user = await self.repo.update_user(
-            user_id,
+            user_id, values
         )
-
         logger.info(
-            "Пользователь изменён: user_id=%s -> ",
-            user_id,
+            'Пользователь изменён: user_id=%s, fields=%s',
+            user_id, list(values.keys()),
         )
         return user

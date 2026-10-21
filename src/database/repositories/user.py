@@ -1,5 +1,5 @@
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models.users import UserDB
@@ -37,7 +37,6 @@ class UserRepository:
         await self.session.refresh(user)
         return user
 
-
     async def list_filtered(
         self,
         *,
@@ -55,22 +54,20 @@ class UserRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-
-
-    async def update_status(
+    async def update_user(
         self,
         user_id: int,
+        values: dict
     ) -> UserDB | None:
         """Обновление пользователя."""
 
         stmt = (
             update(UserDB)
             .where(UserDB.id == user_id)
-            .where(TaskDB.status == expected_status) 
             .values(**values)
-            .returning(TaskDB)
+            .returning(UserDB)
         )
         result = await self.session.execute(stmt)
-        task = result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
         await self.session.commit()
-        return task
+        return user

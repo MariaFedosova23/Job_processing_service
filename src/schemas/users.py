@@ -29,5 +29,5 @@ class CreateUserSchema(BaseModel):
     role: Roles
 
 class PatchUserSchema(BaseModel):
-    role: Roles
-    is_active: bool
+    role: Roles | None = None
+    is_active: bool | None = None

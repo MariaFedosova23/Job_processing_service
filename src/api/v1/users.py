@@ -1,16 +1,12 @@
-import logging 
-
+import logging
 from fastapi import (
-    APIRouter, Depends, HTTPException, status, Query
+    APIRouter, Query
 )
 
-from authx import TokenPayload
-from src.schemas.users import UserLoginSchema, UserLoginResponse, PatchUserSchema
-from src.config import security
-from src.api.v1.dependencies import get_current_user
-from src.database.models.users import UserDB
+from src.schemas.users import (
+    PatchUserSchema
+)
 from src.schemas.users import UserResponseSchema, CreateUserSchema
-from src.services.user_service import UserService
 from src.api.v1.dependencies import UserServiceDep
 from src.enums import Roles
 from src.constants import (
@@ -34,14 +30,13 @@ router = APIRouter(prefix='/api/v1/users', tags=['users'])
 )
 async def create_user(
     service: UserServiceDep,
-    creds: CreateUserSchema 
+    creds: CreateUserSchema
 ):
     return await service.create_user(
         creds.username,
         creds.password,
         creds.role
     )
-
 
 @router.get(
     '/',
@@ -56,14 +51,14 @@ async def get_users(
     is_active: bool | None = Query(
         None, description='Фильтр по активности пользователя'
     ),
-    limit: int | None = Query(
+    limit: int = Query(
         default=DEFAULT_LIMIT_USERS,
         ge=MIN_LIMIT_USERS,
         le=MAX_LIMIT_USERS,
     ),
-    offset: int | None = Query(
+    offset: int = Query(
         default=DEFAULT_OFFSET,
-        ge=MIN_OFFSET  
+        ge=MIN_OFFSET,
     )
 ) -> list[UserResponseSchema]:
     return await service.list_users(
@@ -82,8 +77,6 @@ async def get_user(
 ) -> UserResponseSchema:
     return await service.get_or_raise(user_id)
 
-
-
 @router.patch(
         path='/{user_id}/',
         response_model=UserResponseSchema,
@@ -94,7 +87,8 @@ async def patch_user(
     user_id: int,
     service: UserServiceDep
 ) -> UserResponseSchema:
-    return await service.change_user(
+    return await service.patch_user(
         user_id,
-    
+        role=payload.role,
+        is_active=payload.is_active,
     )

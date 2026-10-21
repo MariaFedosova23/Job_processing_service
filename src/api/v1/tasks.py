@@ -95,7 +95,6 @@ async def patch_status_of_task(
         caller=Caller.API_USER,
     )
     
-   
 @router.delete(
     '/{task_id}',
     summary='Удаление задачи',
@@ -106,8 +105,6 @@ async def delete_task(
 ):
     await service.delete(task_id)
     
-
-
 @router.post(
     '/{task_id}/process',
     summary='Обработка задания',
@@ -139,7 +136,6 @@ async def retry_process_task(
         status=result.task.status,
         run_id=result.run_id,
     )
-
 
 @router.post(
     '/{task_id}/cancel',

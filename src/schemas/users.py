@@ -8,13 +8,26 @@ class UserLoginSchema(BaseModel):
         min_length=MIN_LENGTH_PASSWORD
     )
 
-class UserRead:
+class UserResponseSchema(BaseModel):
     id: int
     username: str
     role: Roles
-    is_active: bool
+    is_active: bool = True
 
 
 class UserLoginResponse(BaseModel):
     access_token: str
     token_type: str
+
+class CurrentUserSchema(UserResponseSchema):
+    pass
+
+
+class CreateUserSchema(BaseModel):
+    username: str
+    password: str
+    role: Roles
+
+class PatchUserSchema(BaseModel):
+    role: Roles
+    is_active: bool

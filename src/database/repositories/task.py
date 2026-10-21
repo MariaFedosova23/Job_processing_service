@@ -33,6 +33,11 @@ class TaskRepository:
     async def get(self, task_id: int) -> TaskDB | None:
         return await self.session.get(TaskDB, task_id)
 
+    async def get_by_owner(self, owner_id: int) -> list[TaskDB]:
+        stmt = select(TaskDB).where(TaskDB.owner_id == owner_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
     async def add(self, task: TaskDB) -> TaskDB:
         self.session.add(task)
         await self.session.commit()
@@ -394,19 +399,7 @@ class TaskRepository:
         await self.session.commit()
         return tasks_ids
 
-    async def get_owned_task(
-        self,
-        task_id: int,
-        current_user_id: int
-    ) -> TaskDB:
-        
-        task = self.get(task_id)
-        if not task:
-            raise ValueError('Task not found')
-        if task.owner_id != current_user_id:
-            raise PermissionError('Acces denied: ')
-        return task
-
+    
     
     def build_outbox_get_file(
             self,

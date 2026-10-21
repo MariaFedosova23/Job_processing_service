@@ -28,10 +28,11 @@ class UserDB(Base):
     username: Mapped[str] = mapped_column(
         String(MAX_LENGTH_USERNAME),
         unique=True,
-        nullable=False
+        nullable=False,
     )
     password_hash: Mapped[str] = mapped_column(
-        String(MAX_LENGTH_PASSWORD_HASH)
+        String(MAX_LENGTH_PASSWORD_HASH),
+        nullable=False
 
     )
     
@@ -43,7 +44,10 @@ class UserDB(Base):
         ),
         nullable=False
     )
-    is_active: Mapped[bool] = mapped_column()
+    is_active: Mapped[bool] = mapped_column(
+        default=True,
+        nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -56,5 +60,6 @@ class UserDB(Base):
         nullable=False
     )
     tasks: Mapped[list['TaskDB']] = relationship(
-        back_populates='owner'
+        back_populates='owner',
+        cascade='all, delete-orphan',
     )

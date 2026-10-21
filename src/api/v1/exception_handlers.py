@@ -13,7 +13,12 @@ from src.services.exceptions import (
     TransitionForbiddenError,
     TaskStateConflictError,
     InvalidFileTypeError,
-    FileTooLargeError
+    FileTooLargeError,
+    AccessDenied,
+    InvalidCredentials,
+    UserInactive,
+    UserNotFound,
+    UserAlreadyExists
 )
 
 logger = logging.getLogger('job_processing_service')
@@ -143,9 +148,32 @@ async def handle_file_too_large(
         },
     )
 
+async def user_exists(
+    request: Request, exc: UserAlreadyExists
+):
+    return JSONResponse(status_code=409, content={'detail': str(exc)})
+
+async def user_not_found(_: Request, exc: UserNotFound):
+    return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+
+async def invalid_credentials(_: Request, exc: InvalidCredentials):
+    return JSONResponse(status_code=401, content={"detail": "Неверные учётные данные"})
+
+async def user_inactive(_: Request, exc: UserInactive):
+    return JSONResponse(status_code=403, content={"detail": "Аккаунт деактивирован"})
+
+async def access_denied(_: Request, exc: AccessDenied):
+    return JSONResponse(status_code=403, content={"detail": "Доступ запрещён"})
+
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Регистрирует все обработчики доменных исключений."""
+    app.add_exception_handler(UserAlreadyExists, user_exists)
+    app.add_exception_handler(AccessDenied, access_denied)
+    app.add_exception_handler(UserInactive, user_inactive)
+    app.add_exception_handler(InvalidCredentials, invalid_credentials)
+    app.add_exception_handler(UserNotFound, user_not_found)
     app.add_exception_handler(TaskNotFoundError, task_not_found_handler)
     app.add_exception_handler(
         DuplicateExternalIdError, duplicate_external_id_handler,

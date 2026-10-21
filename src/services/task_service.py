@@ -15,7 +15,8 @@ from src.services.exceptions import (
     DuplicateExternalIdError,
     TaskCannotBeProcessedError,
     TaskCannotBeRetryError,
-    TaskStateConflictError
+    TaskStateConflictError,
+    AccessDenied
 )
 
 
@@ -23,8 +24,6 @@ from src.services.validator_task import (
     validate_task_can_be_cancelled,
     validate_transition_for_caller,
 )
-
-
 
 
 logger = logging.getLogger('job_processing_service')
@@ -49,7 +48,7 @@ class TaskService:
             priority: int | None,
             limit,
             offset,
-    ) -> list[TaskDB]:
+        ) -> list[TaskDB]:
         return await self.repo.list_filtered(
             status=status, priority=priority, limit=limit, offset=offset,
         )
@@ -67,12 +66,14 @@ class TaskService:
     async def get_task_for_user(
         self,
         task_id: int,
-        current_user_id: int,  
+        user_id: int,
+        can_access_any: bool = False,
     ) -> TaskDB:
-        task = self.repo.get_owned_task(
-            task_id,
-            current_user_id,
-        )
+        task = self.repo.get(task_id)
+        if not task:
+            raise TaskNotFoundError(task_id)
+        if not can_access_any and task.owner_id != user_id:
+            raise AccessDenied()
         return task
 
     async def create(self, data: TaskCreateSchema) -> TaskDB:

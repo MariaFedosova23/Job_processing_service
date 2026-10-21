@@ -6,7 +6,6 @@ from fastapi import FastAPI
 
 from src.api.v1.exception_handlers import register_exception_handlers
 from src.api import main_router
-from src.api.health import router as health_router
 from src.logging.logging_config import setup_logging
 from src.config import security
 
@@ -17,7 +16,7 @@ app = FastAPI(title='Job Processing Service')
 security.handle_errors(app)
 
 app.include_router(main_router)
-app.include_router(health_router)
+
 register_exception_handlers(app)
 
 if __name__ == '__main__':

@@ -8,6 +8,18 @@ class UserNotFound(DomainError):
     def __init__(self, user_id: int):
         self.user_id = user_id
         super().__init__(f'Пользователь {user_id} не найден')
+class UserInactive(DomainError):
+    pass
+
+class InvalidCredentials(DomainError):
+    pass
+
+class AccessDenied(DomainError):
+    pass
+
+class UserAlreadyExists(DomainError):
+    def __init__(self, username: str):
+        super().__init__(f'Пользователь {username} уже существует')
 
 
 class TaskNotFoundError(DomainError):

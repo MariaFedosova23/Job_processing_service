@@ -54,6 +54,7 @@ class UserRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    
     async def update_user(
         self,
         user_id: int,

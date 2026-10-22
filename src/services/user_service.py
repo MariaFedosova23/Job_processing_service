@@ -3,9 +3,15 @@ from src.database.repositories.user import UserRepository
 from src.auth.security import verify_password, get_password_hash
 from src.database.models.users import UserDB
 from src.services.exceptions import (
-    InvalidCredentials, UserInactive, UserNotFound, UserAlreadyExists
+    InvalidCredentials,
+    UserInactive,
+    UserNotFound,
+    UserAlreadyExists,
+    WrongPassword
 )
 from src.enums import Roles
+from src.services.validator_user import validate_password
+
 import logging
 
 logger = logging.getLogger('Job_processing_service')
@@ -38,11 +44,12 @@ class UserService:
     async def create_user(
         self, username: str, password: str, role: Roles
     ) -> UserDB:
+        validate_password(password)
         existing = await self.repo.get_by_username(username)
         if existing:
             raise UserAlreadyExists(username)
         user = await self.repo.create(
-            username,
+            username=username,
             password_hash=get_password_hash(password), 
             role=role,
             is_active=True
@@ -99,3 +106,31 @@ class UserService:
             user_id, list(values.keys()),
         )
         return user
+
+
+    async def change_password(
+        self,
+        user: UserDB,
+        old_password: str,
+        new_password: str
+    ):
+        validate_password(new_password)
+        if not verify_password(old_password, user.password_hash):
+            raise WrongPassword(user.id)
+        values: dict = {}
+        values['password_hash'] = get_password_hash(new_password)
+        return await self.repo.update_user(user.id, values)
+
+    async def reset_password(
+        self,
+        user_id: int,
+        new_password: str
+    ):
+        validate_password(new_password)
+        await self.get_or_raise(user_id)
+        values: dict = {}
+        values['password_hash'] = get_password_hash(new_password) 
+        user =  await self.repo.update_user(user_id, values)  
+        logger.info('Пароль сброшен: user_id=$s', user_id)
+        return user
+        

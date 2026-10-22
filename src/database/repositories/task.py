@@ -21,7 +21,7 @@ class TaskRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_with_result(self, task_id: int) -> TaskDB | None:
+    async def get_for_detail(self, task_id: int) -> TaskDB | None:
         stmt = (
             select(TaskDB).where(TaskDB.id == task_id).options(
                 selectinload(TaskDB.result)
@@ -33,10 +33,6 @@ class TaskRepository:
     async def get(self, task_id: int) -> TaskDB | None:
         return await self.session.get(TaskDB, task_id)
 
-    async def get_by_owner(self, owner_id: int) -> list[TaskDB]:
-        stmt = select(TaskDB).where(TaskDB.owner_id == owner_id)
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
 
     async def add(self, task: TaskDB) -> TaskDB:
         self.session.add(task)
@@ -66,10 +62,39 @@ class TaskRepository:
             stmt = stmt.where(TaskDB.status == status)
         if priority is not None:
             stmt = stmt.where(TaskDB.priority == priority)
-        stmt = stmt.offset(offset).limit(limit)
+        stmt = (
+            stmt
+            .order_by(TaskDB.created_at.desc(), TaskDB.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_filtered_by_owner(
+        self,
+        *,
+        owner_id: int,
+        status: Status | None = None,
+        priority: int | None = None,
+        limit: int,
+        offset: int,
+    ) -> list[TaskDB]:
+        stmt = select(TaskDB).where(TaskDB.owner_id == owner_id)
+        if status is not None:
+            stmt = stmt.where(TaskDB.status == status)
+        if priority is not None:
+            stmt = stmt.where(TaskDB.priority == priority)
+        stmt = (
+            stmt
+            .order_by(TaskDB.created_at.desc(), TaskDB.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+    
 
     async def update_status(
         self,
@@ -193,23 +218,23 @@ class TaskRepository:
         expected_status: Status
     ) -> TaskDB | None:
         """Переводит задачу в статус Queued и создаёт запись в Outbox"""
-        async with self.session.begin():
-            stmt = (
-                update(TaskDB)
-                .where(TaskDB.id == task_id)
-                .where(TaskDB.status == expected_status)
-                .values(
-                    status=Status.QUEUED,
-                    error=None,
-                    run_id=run_id,
-                )
-                .returning(TaskDB)
+        # async with self.session.begin():
+        stmt = (
+            update(TaskDB)
+            .where(TaskDB.id == task_id)
+            .where(TaskDB.status == expected_status)
+            .values(
+                status=Status.QUEUED,
+                error=None,
+                run_id=run_id,
             )
-            task = (await self.session.execute(stmt)).scalar_one_or_none()
+            .returning(TaskDB)
+        )
+        task = (await self.session.execute(stmt)).scalar_one_or_none()
 
-            if task is not None:
-                self.session.add(self._build_outbox(task_id, run_id))
-
+        if task is not None:
+            self.session.add(self._build_outbox(task_id, run_id))
+        await self.session.commit()
         return task
 
     
@@ -424,42 +449,31 @@ class TaskRepository:
         Создаёт файл (если задача существует) и ставит outbox-запись.
         Возвращает None, если задачи уже нет.
         """
-        async with self.session.begin():
-            stmt = (
-                insert(FileDB).from_select(
-                    ['task_id', 'original_name', 'internal_name', 'mime_type', 'size_bytes'],
-                    select(
-                        literal(task_id, Integer),
-                        literal(original_name, String(255)),
-                        literal(internal_name, String(255)),
-                        literal(mime_type, String(100)),
-                        literal(size_bytes, Integer),
-                    ).where(
-                        select(TaskDB.id).where(TaskDB.id == task_id).exists()
-                    ),
-                )
-                .returning(FileDB)
+        # async with self.session.begin():
+        stmt = (
+            insert(FileDB).from_select(
+                ['task_id', 'original_name', 'internal_name', 'mime_type', 'size_bytes'],
+                select(
+                    literal(task_id, Integer),
+                    literal(original_name, String(255)),
+                    literal(internal_name, String(255)),
+                    literal(mime_type, String(100)),
+                    literal(size_bytes, Integer),
+                ).where(
+                    select(TaskDB.id).where(TaskDB.id == task_id).exists()
+                ),
             )
-            file_db = (await self.session.execute(stmt)).scalar_one_or_none()
-            if file_db is not None:
-                self.session.add(
-                    self.build_outbox_get_file(
-                        task_id, internal_name
-                    )
+            .returning(FileDB)
+        )
+        file_db = (await self.session.execute(stmt)).scalar_one_or_none()
+        if file_db is not None:
+            self.session.add(
+                self.build_outbox_get_file(
+                    task_id, internal_name
                 )
-            return file_db
+            )
+        await self.session.commit()
+        return file_db
 
-                    
-        # file_obj = FileDB(
-        #     task_id=task_id,
-        #     original_name=original_name,
-        #     internal_name=internal_name,
-        #     mime_type=mime_type,
-        #     size_bytes=size_bytes,
-        # )
-        # self.session.add(file_obj)
-        # await self.session.commit()
-        # await self.session.refresh(file_obj)
-        # return file_obj
 
         

@@ -35,7 +35,7 @@ class HealthService:
     )
         try:
             
-            if client.ping():
+            if  await client.ping():
                 return {'status': 'ok'}
             
             return {'status': 'error', 'detail': 'PING returned False'}

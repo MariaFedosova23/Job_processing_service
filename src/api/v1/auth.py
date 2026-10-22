@@ -2,7 +2,13 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from authx import TokenPayload
-from src.schemas.users import UserLoginSchema, UserLoginResponse, CurrentUserSchema
+from src.schemas.users import (
+    UserLoginSchema,
+    UserLoginResponse,
+    CurrentUserSchema,
+    ChangePasswordSchema,
+    UserResponseSchema
+)
 from src.config import security
 from src.api.v1.dependencies import get_current_user
 from src.database.models.users import UserDB
@@ -11,14 +17,14 @@ from src.api.v1.dependencies import UserServiceDep
 
 logger = logging.getLogger('job_processing_service')
 
-router = APIRouter(prefix='/api/v1/auth', tags=['auth'])
+public_auth_router = APIRouter(prefix='/api/v1/auth', tags=['auth'])
+protected_auth_router = APIRouter(
+    prefix='/api/v1/auth',
+    tags=['auth'],
+    dependencies=[Depends(get_current_user)],
+)
 
-USERS = {
-    'admin': {'password': 'admin123', 'role': 'admin'},
-    'user': {'password': 'user1234', 'role': 'user'},
-}
-
-@router.post(
+@public_auth_router.post(
     path='/login',
     summary='Авторизация пользователя',
     response_model=UserLoginResponse
@@ -38,7 +44,7 @@ async def login_user(
     return UserLoginResponse(access_token=token)
     
 
-@router.get(
+@protected_auth_router.get(
     '/me',
     summary='Получение текущего пользователя',
     response_model=CurrentUserSchema
@@ -47,3 +53,20 @@ async def get_me(
     current_user: UserDB = Depends(get_current_user)
 ):
     return current_user
+
+
+@protected_auth_router.post(
+    '/change-password',
+    summary='Смена пароля',
+    response_model=UserResponseSchema
+)
+async def change_password(
+    creds: ChangePasswordSchema,
+    service: UserServiceDep,
+    user: UserDB = Depends(get_current_user)
+):
+    return await service.change_password(
+        user,
+        creds.old_password,
+        creds.new_password
+    )

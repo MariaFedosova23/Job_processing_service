@@ -176,15 +176,19 @@ cd Job_processing_service
 ```bash
 docker compose up -d --build
 ```
+### 4. Cоздать администратора
+```bash
+docker compose exec api python -m src.cli --username admin
+```
 
 
-### 4. Запустить тестовые данные(опционально)
+### 5. Запустить тестовые данные(опционально)
 ```bash
 docker compose --profile seed run --rm seed
 ```
 
 
-### 5. Открыть Swagger
+### 6. Открыть Swagger
 
 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 

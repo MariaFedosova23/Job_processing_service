@@ -6,19 +6,24 @@ ROLE_SCOPES = {
         'users:is_active_false',
         'passwords:reset',
         'tasks:create',
+        'tasks:patch_status',
         'tasks:read',
-        'tasks:run',
+        'tasks:process',
         'tasks:retry',
         'tasks:cancel',
-        'tasks:delete'
+        'tasks:delete',
+        'tasks:upload_file'
+
     ],
     'operator': [
         'tasks:create',
+        'tasks:patch_own_status',
         'tasks:read_own',
-        'tasks:run_own',
+        'tasks:process_own',
         'tasks:retry_own',
         'tasks:cancel_own',
-        'tasks:delete_own'
+        'tasks:delete_own',
+        'tasks:upload_file_own'
     ],
     'viewer': [
         'tasks:read_own'

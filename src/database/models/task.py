@@ -97,7 +97,7 @@ class TaskDB(Base):
 
     owner_id: Mapped[int] = mapped_column(
         ForeignKey('users.id', ondelete='CASCADE'),
-        nullable=True,
+        nullable=False,
         index=True
     )
     owner: Mapped['UserDB'] = relationship(back_populates='tasks')

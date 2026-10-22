@@ -87,20 +87,28 @@ def require_scopes(*required_scopes: str, all_required: bool = True):
     return scope_checker
 
 
-async def get_task_for_current_user(
-    service: TaskServiceDep,
-    task_id: int,
-    current_user: UserDB = Depends(get_current_user),
-    payload: TokenPayload = Depends(security.access_token_required)
-) -> TaskDB:
-    can_access_any = payload.has_scopes('tasks:read')
+def get_task_for_action(
+    action_scope: str,
+    own_scope: str,
     
-    return await service.get_task_for_user(
-        task_id,
-        current_user.id,
-        can_access_any=can_access_any,
+):
+    async def checker(
+        task_id: int,
+        service: TaskServiceDep,
+        current_user: UserDB = Depends(get_current_user),
+        payload: TokenPayload = Depends(security.access_token_required),
+    )-> TaskDB:
+        can_access_any = payload.has_scopes(action_scope)
+        if not can_access_any and not payload.has_scopes(own_scope):
+            raise AccessDenied()
+        return await service.get_task_for_user(
+            task_id,
+            current_user.id,
+            can_access_any=can_access_any,
+        )
+    return checker
 
-    )
+
     
 
 

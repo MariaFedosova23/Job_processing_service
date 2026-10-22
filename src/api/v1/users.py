@@ -1,12 +1,15 @@
 import logging
 from fastapi import (
-    APIRouter, Query
+    APIRouter, Query, Depends
 )
 
 from src.schemas.users import (
     PatchUserSchema
 )
-from src.schemas.users import UserResponseSchema, CreateUserSchema
+from src.schemas.users import (
+    UserResponseSchema, CreateUserSchema,
+    ResetPasswordSchema
+)
 from src.api.v1.dependencies import UserServiceDep
 from src.enums import Roles
 from src.constants import (
@@ -16,6 +19,7 @@ from src.constants import (
     MIN_OFFSET,
     DEFAULT_OFFSET
 )
+from src.api.v1.dependencies import require_scopes
 
 
 logger = logging.getLogger('job_processing_service')
@@ -26,7 +30,12 @@ router = APIRouter(prefix='/api/v1/users', tags=['users'])
 @router.post(
     '/',
     summary='Создание пользователя',
-    response_model=UserResponseSchema
+    response_model=UserResponseSchema,
+    dependencies=[Depends(
+        require_scopes(
+        'users:create')
+        )
+    ]
 )
 async def create_user(
     service: UserServiceDep,
@@ -42,6 +51,11 @@ async def create_user(
     '/',
     response_model=list[UserResponseSchema],
     summary='Получить список пользователей',
+    dependencies=[Depends(
+        require_scopes(
+        'users:get')
+        )
+    ]
 )
 async def get_users(
     service: UserServiceDep,
@@ -69,6 +83,11 @@ async def get_users(
     '/{user_id}',
     response_model=UserResponseSchema,
     summary='Получить пользователя',
+    dependencies=[Depends(
+        require_scopes(
+        'users:get')
+        )
+    ]
 )
 async def get_user(
     service: UserServiceDep,
@@ -78,9 +97,14 @@ async def get_user(
     return await service.get_or_raise(user_id)
 
 @router.patch(
-        path='/{user_id}/',
-        response_model=UserResponseSchema,
-        summary='Изменение пользователя',
+    path='/{user_id}/',
+    response_model=UserResponseSchema,
+    summary='Изменение пользователя',
+    dependencies=[Depends(
+        require_scopes(
+        'users:update')
+        )
+    ]
 )
 async def patch_user(
     payload: PatchUserSchema,
@@ -91,4 +115,20 @@ async def patch_user(
         user_id,
         role=payload.role,
         is_active=payload.is_active,
+    )
+
+
+@router.post(
+    '/{user_id}/reset-password',
+    response_model=UserResponseSchema,
+    dependencies=[Depends(require_scopes('passwords:reset'))]
+)
+async def reset_password(
+    payload: ResetPasswordSchema,
+    user_id: int,
+    service: UserServiceDep
+):
+    return await service.reset_password(
+        user_id,
+        payload.new_password
     )

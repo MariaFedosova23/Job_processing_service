@@ -44,17 +44,25 @@ class TaskService:
     async def list_tasks(
             self,
             *,
+            user_id: int,
+            can_access_any: bool,
             status: Status | None,
             priority: int | None,
-            limit,
-            offset,
+            limit: int,
+            offset: int,
         ) -> list[TaskDB]:
-        return await self.repo.list_filtered(
+        if can_access_any:
+            return await self.repo.list_filtered(
+                status=status, priority=priority, limit=limit, offset=offset,
+            )
+        return await self.repo.list_filtered_by_owner(
+            owner_id=user_id,
             status=status, priority=priority, limit=limit, offset=offset,
         )
+    
 
     async def get_or_raise(self, task_id: int) -> TaskDB:
-        task = await self.repo.get_with_result(task_id)
+        task = await self.repo.get_for_detail(task_id)
         if task is None:
             logger.warning(
                 "Задача не найдена",
@@ -69,14 +77,19 @@ class TaskService:
         user_id: int,
         can_access_any: bool = False,
     ) -> TaskDB:
-        task = self.repo.get(task_id)
+        task = await self.repo.get_for_detail(task_id)
         if not task:
             raise TaskNotFoundError(task_id)
         if not can_access_any and task.owner_id != user_id:
             raise AccessDenied()
         return task
 
-    async def create(self, data: TaskCreateSchema) -> TaskDB:
+    async def create(
+        self,
+        data: TaskCreateSchema,
+        *,
+        owner_id: int,
+    ) -> TaskDB:
         existing = await self.repo.get_by_external_id(data.external_id)
         if existing is not None:
             raise DuplicateExternalIdError(data.external_id)
@@ -85,12 +98,13 @@ class TaskService:
             text=data.text,
             priority=data.priority,
             external_id=data.external_id,
+            owner_id=owner_id,
         )
         task = await self.repo.add(task)
     
         logger.info(
-            "Задача создана: external_id=%s",
-            data.external_id,
+            "Задача создана: external_id=%s, user_id=%s",
+            data.external_id, owner_id,
             extra={"event": "task_created", "task_id": task.id},
         )
         return task
@@ -120,8 +134,8 @@ class TaskService:
             raise TaskStateConflictError(task_id, expected_status)
 
         logger.info(
-            "Статус задачи изменён: %s -> %s (caller=%s)",
-            expected_status, new_status.value, caller.value,
+            "Статус задачи изменён: %s -> %s (caller=%s), user_id=%s",
+            expected_status, new_status.value, caller.value, task.owner_id,
             extra={"event": "task_status_changed", "task_id": task.id},
         )
         return task
@@ -132,15 +146,15 @@ class TaskService:
             await self.repo.delete(task)
         except Exception:
             logger.exception(
-                "Ошибка БД при удалении задачи: task_id=%s",
-                task_id,
+                "Ошибка БД при удалении задачи: task_id=%s, user_id=%s",
+                task_id, task.owner_id,
                 extra={"event": "task_delete_failed", "task_id": task_id},
             )
             raise
 
         logger.info(
-            "Задача удалена: task_id=%s",
-            task_id,
+            "Задача удалена: task_id=%s,  user_id=%s",
+            task_id, task.owner_id,
             extra={"event": "task_deleted", "task_id": task_id},
         )
 
@@ -168,8 +182,8 @@ class TaskService:
         
         
         logger.info(
-            'Задача поставлена в очередь: task_id=%s, run_id=%s',
-            task_id, run_id,
+            'Задача поставлена в очередь: task_id=%s, run_id=%s , user=%s',
+            task_id, run_id, task.owner_id,
             extra={'event': 'task_processing_started', 'task_id': task_id},
         )
         return StartProcessingResult(
@@ -199,7 +213,7 @@ class TaskService:
 
         
         logger.info(
-            "Запущена обработка задачи: task_id=%s", task_id,
+            "Запущена обработка задачи: task_id=%s user_id=%s", task_id, task.owner_id,
             extra={"event": "task_processing_retried", "task_id": task_id},
         )
         return StartProcessingResult(task=task, run_id=run_id)

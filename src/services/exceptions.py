@@ -3,6 +3,17 @@
 class DomainError(Exception):
     """Базовое доменное исключение — общий родитель для всех наших ошибок."""
 
+class WrongPassword(Exception):
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+        super().__init__(f'Пароль указан неверно для пользователя {user_id}')
+
+
+class InvalidPassword(DomainError):
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(f'Некорректный пароль: {message}')
+
 
 class UserNotFound(DomainError):
     def __init__(self, user_id: int):

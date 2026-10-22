@@ -18,11 +18,28 @@ from src.services.exceptions import (
     InvalidCredentials,
     UserInactive,
     UserNotFound,
-    UserAlreadyExists
+    UserAlreadyExists,
+    WrongPassword,
+    InvalidPassword
 )
 
 logger = logging.getLogger('job_processing_service')
 
+
+async def invalid_password(request: Request, exc: InvalidPassword):
+    logger.warning(
+        "В пароле ошибки",
+        extra={"event": "invalid_password"},
+    )
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+async def password_not_found_user(request: Request, exc: WrongPassword):
+    logger.warning(
+        "Пароль не найден",
+        extra={"event": "password_not_found", "user_id": exc.user_id},
+    )
+    return JSONResponse(status_code=403, content={"detail": str(exc)})
 
 async def task_not_found_handler(request: Request, exc: TaskNotFoundError):
     logger.warning(
@@ -169,6 +186,8 @@ async def access_denied(_: Request, exc: AccessDenied):
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Регистрирует все обработчики доменных исключений."""
+    app.add_exception_handler(InvalidPassword, invalid_password)
+    app.add_exception_handler(WrongPassword, password_not_found_user)
     app.add_exception_handler(UserAlreadyExists, user_exists)
     app.add_exception_handler(AccessDenied, access_denied)
     app.add_exception_handler(UserInactive, user_inactive)

@@ -19,7 +19,9 @@ from src.constants import (
     TASK_PRIORITY_LOW,
 )
 from src.api.v1.dependencies import (
-    TaskServiceDep, FileServiceDep, require_scopes, get_task_for_action
+    TaskServiceDep, FileServiceDep, 
+    require_scopes, get_task_for_action, user_has_scopes,
+    get_current_user
     
 )
 from src.config import security
@@ -27,6 +29,7 @@ from src.enums import Status, Caller
 from src.schemas.file import FileResponse
 # from src.auth.dependencies import get_current_user, require_scopes
 from src.database.models.task import TaskDB
+from src.database.models.users import UserDB
 
 logger = logging.getLogger('job_processing_service')
 
@@ -43,7 +46,7 @@ router = APIRouter(prefix='/api/v1/tasks', tags=['tasks'])
 )
 async def get_tasks(
     service: TaskServiceDep,
-    payload: TokenPayload = Depends(security.access_token_required),
+    current_user: UserDB = Depends(get_current_user),
     status: Status | None = Query(
         None, description='Фильтр по статусу задания'
     ),
@@ -54,8 +57,8 @@ async def get_tasks(
     offset: int = Query(DEFAULT_OFFSET, ge=MIN_OFFSET),
 ) -> list[TaskListSchema]:
     return await service.list_tasks(
-        user_id=int(payload.sub),
-        can_access_any=payload.has_scopes('tasks:read'),
+        user_id=int(current_user.id),
+        can_access_any=user_has_scopes(current_user,'tasks:read'),
         status=status, priority=priority, limit=limit, offset=offset
     )
     

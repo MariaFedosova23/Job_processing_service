@@ -10,7 +10,10 @@ from src.services.exceptions import (
     WrongPassword
 )
 from src.enums import Roles
-from src.services.validator_user import validate_password
+from src.services.validator_user import (
+    validate_password,
+    validate_username,
+)
 
 import logging
 
@@ -34,6 +37,7 @@ class UserService:
         username: str,
         password: str,
     ) -> UserDB:
+        
         user = await self.repo.get_by_username(username)
         if not user or not verify_password(password, user.password_hash):
             raise InvalidCredentials()
@@ -44,6 +48,7 @@ class UserService:
     async def create_user(
         self, username: str, password: str, role: Roles
     ) -> UserDB:
+        username = validate_username(username)
         validate_password(password)
         existing = await self.repo.get_by_username(username)
         if existing:

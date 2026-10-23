@@ -12,6 +12,11 @@ from src.database.repositories.user import UserRepository
 from src.enums import Roles
 from src.services.user_service import UserService
 from src.services.exceptions import UserAlreadyExists
+from src.services.validator_user import (
+    validate_password,
+    validate_username,
+    InvalidUsername, InvalidPassword
+)
 
 app = typer.Typer(help='Управление пользователями Job Processing Service')
 
@@ -35,18 +40,24 @@ def create_admin(
         None, '--password', '-p', help='Пароль (если не указан, будет запрошен скрыто)'
     ),
 ):
+    try:
+        username = validate_username(username)
+    except InvalidUsername as exc:
+        typer.secho(f'Ошибка: {exc}', fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    
     if password is None:
         password = getpass.getpass('Пароль: ')
-        password_confrm = getpass.getpass('Повторите парль: ')
-        if password != password_confrm:
+        password_confirm = getpass.getpass('Повторите пароль: ')
+        if password != password_confirm:
             typer.secho('Пароли не совпадают', fg=typer.colors.RED, err=True)
             raise typer.Exit(code=1)
-        if not (MIN_LENGTH_PASSWORD <= len(password) <= MAX_LENGTH_PASSWORD):
-            typer.secho(
-                f'Пароль должен быть от {MIN_LENGTH_PASSWORD} до {MAX_LENGTH_PASSWORD} символов',
-                fg=typer.colors.RED, err=True,
-            )
-            raise typer.Exit(code=1)
+    try:
+        validate_password(password)
+    except InvalidPassword as exc:
+        typer.secho(f'Ошибка: {exc}', fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+        
     try:
         user = asyncio.run(async_create_admin(username, password))
     except UserAlreadyExists as exc:

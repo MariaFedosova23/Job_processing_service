@@ -21,7 +21,7 @@ from src.services.user_service import UserService
 from src.services.exceptions import (
     UserInactive, UserNotFound, TaskNotFoundError, AccessDenied
 )
-
+from src.auth.permissions import get_scopes_for_role
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
@@ -52,6 +52,16 @@ def get_user_service(repo: UserRepoDep) -> UserService:
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 
+def user_has_scopes(user: UserDB, *required: str, all_required: bool = True) -> bool:
+    """Проверяет scopes по актуальной роли пользователя из БД."""
+    actual_scopes = set(get_scopes_for_role(user.role.value))
+    if all_required:
+        return all(scope in actual_scopes for scope in required)
+    return any(scope in actual_scopes for scope in required)
+
+
+
+
 
 async def get_current_user(
     service: UserServiceDep,
@@ -76,14 +86,15 @@ def require_scopes(*required_scopes: str, all_required: bool = True):
     Фабрика зависимостей для проверки прав в токене.
     """
     async def scope_checker(
-        payload: TokenPayload = Depends(security.access_token_required)
-    ) -> TokenPayload:
-        if not payload.has_scopes(*required_scopes, all_required=all_required):
+        current_user: UserDB = Depends(get_current_user),
+        
+    ) -> UserDB:
+        if not user_has_scopes(current_user, *required_scopes, all_required=all_required):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail='Недостаточно прав'
             )
-        return payload
+        return current_user
     return scope_checker
 
 
@@ -96,10 +107,9 @@ def get_task_for_action(
         task_id: int,
         service: TaskServiceDep,
         current_user: UserDB = Depends(get_current_user),
-        payload: TokenPayload = Depends(security.access_token_required),
     )-> TaskDB:
-        can_access_any = payload.has_scopes(action_scope)
-        if not can_access_any and not payload.has_scopes(own_scope):
+        can_access_any = user_has_scopes(current_user, action_scope)
+        if not can_access_any and not user_has_scopes(current_user, own_scope):
             raise AccessDenied()
         return await service.get_task_for_user(
             task_id,
@@ -109,9 +119,27 @@ def get_task_for_action(
     return checker
 
 
-    
+def get_health_repository(db: SessionDep) -> HealthRepository:
+    return HealthRepository(session=db)
+HealthRepoDep = Annotated[HealthRepository, Depends(get_health_repository)]
 
 
+def get_health_service(repo: HealthRepoDep) -> HealthService:
+    return HealthService(repo=repo)
+
+
+HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
+
+FileStorageDep = Annotated[FileStorage, Depends(get_file_storage)]
+
+def get_file_service(
+    repo: TaskRepoDep,
+    storage: FileStorageDep,
+) -> FileService:
+    return FileService(repo, storage)
+
+
+FileServiceDep = Annotated[FileService, Depends(get_file_service)]
 # async def get_task_for_owner_or_admin(
 #     task_id: int,
 #     repo: TaskRepoDep,
@@ -135,25 +163,3 @@ def get_task_for_action(
 #             detail='Отсутсвуют права на эту задачу'
 #         )
 #     return task
-
-def get_health_repository(db: SessionDep) -> HealthRepository:
-    return HealthRepository(session=db)
-HealthRepoDep = Annotated[HealthRepository, Depends(get_health_repository)]
-
-
-def get_health_service(repo: HealthRepoDep) -> HealthService:
-    return HealthService(repo=repo)
-
-
-HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
-
-FileStorageDep = Annotated[FileStorage, Depends(get_file_storage)]
-
-def get_file_service(
-    repo: TaskRepoDep,
-    storage: FileStorageDep,
-) -> FileService:
-    return FileService(repo, storage)
-
-
-FileServiceDep = Annotated[FileService, Depends(get_file_service)]

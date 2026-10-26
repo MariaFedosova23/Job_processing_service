@@ -1,4 +1,7 @@
 import re
+
+from sqlalchemy.exc import IntegrityError
+
 from src.constants import (
     MIN_LENGTH_PASSWORD,
     MAX_LENGTH_PASSWORD,
@@ -33,14 +36,14 @@ def validate_username(username: str) -> str:
     if not stripped:
         raise InvalidUsername(
             f'Некорректный username: {username}, '
-            'username не должен состоять из пробелов'
+            'username не должен состоять из пробелов '
             'или быть пустым'
         )
     if ' ' in stripped:
         raise InvalidUsername('username не может содержать пробелы')
     if not USERNAME_PATTERN.match(stripped):
         raise InvalidUsername(
-        f'Некорректный username: {username}'
+        f'Некорректный username: {username} '
         'username может содержать только'
         ' буквы, цифры, "_", ".", "-"'
         )
@@ -54,3 +57,14 @@ def validate_username(username: str) -> str:
         )
     
     return stripped
+
+
+def is_username_unique_violation(exc: IntegrityError) -> bool:
+    orig = exc.orig
+    sqlstate = getattr(orig, 'sqlstate', None) or getattr(orig, 'pgcode', None)
+    if sqlstate != '23505':
+        return False
+    constraint = getattr(orig, 'constraint_name', '') or ''
+    if 'users_username' in constraint:
+        return True
+    return 'users_username_key' in str(orig) or 'Key (username)' in str(orig)

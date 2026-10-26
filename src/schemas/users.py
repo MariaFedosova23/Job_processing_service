@@ -20,7 +20,7 @@ class UserLoginSchema(BaseModel):
         min_length=MIN_LENGTH_PASSWORD,
         max_length=MAX_LENGTH_PASSWORD,
     )
-    @field_validator('username')
+    @field_validator('username', mode='before')
     @classmethod
     def _validate_username(cls, value: str) -> str:
         try:
@@ -56,7 +56,7 @@ class CreateUserSchema(BaseModel):
     )
     role: Roles
 
-    @field_validator('username')
+    @field_validator('username', mode='before')
     @classmethod
     def _validate_username(cls, value: str) -> str:
         try:

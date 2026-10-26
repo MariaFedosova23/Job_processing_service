@@ -7,7 +7,8 @@ from src.services.exceptions import (
     UserInactive,
     UserNotFound,
     UserAlreadyExists,
-    WrongPassword
+    WrongPassword,
+    CurrentUserNotFound
 )
 from src.enums import Roles
 from src.services.validator_user import (
@@ -17,7 +18,7 @@ from src.services.validator_user import (
 
 import logging
 
-logger = logging.getLogger('Job_processing_service')
+logger = logging.getLogger('job_processing_service')
 
 
 class UserService:
@@ -27,7 +28,7 @@ class UserService:
     async def get_active_user(self, user_id: int) -> UserDB:
         user = await self.repo.get_by_id(user_id)
         if not user:
-            raise UserNotFound(user_id)
+            raise CurrentUserNotFound(user_id)
         if not user.is_active:
             raise UserInactive()
         return user
@@ -46,7 +47,11 @@ class UserService:
         return user
 
     async def create_user(
-        self, username: str, password: str, role: Roles
+        self, 
+        username: str, 
+        password: str, role: Roles, 
+        *,
+        actor_id: int,
     ) -> UserDB:
         username = validate_username(username)
         validate_password(password)
@@ -58,8 +63,11 @@ class UserService:
             password_hash=get_password_hash(password), 
             role=role,
             is_active=True
-
         )
+        logger.info('Пользователь создан: target_user_id=%s, actor_id=%s',
+        user.id, actor_id
+        )
+        
         return user
 
     async def list_users(
@@ -90,6 +98,7 @@ class UserService:
         self,
         user_id: int,
         *,
+        actor_id: int,
         role: Roles | None = None,
         is_active: bool | None = None,
         
@@ -107,8 +116,8 @@ class UserService:
             user_id, values
         )
         logger.info(
-            'Пользователь изменён: user_id=%s, fields=%s',
-            user_id, list(values.keys()),
+            'Пользователь изменён: target_user_id=%s, actor_id=%s, fields=%s',
+            user_id, actor_id, list(values.keys()),
         )
         return user
 
@@ -124,18 +133,28 @@ class UserService:
             raise WrongPassword(user.id)
         values: dict = {}
         values['password_hash'] = get_password_hash(new_password)
-        return await self.repo.update_user(user.id, values)
+        user = await self.repo.update_user(user.id, values)
+        logger.info(
+            'Пароль изменен: user_id=%s',
+            user.id
+        )
+        return user
 
     async def reset_password(
         self,
         user_id: int,
-        new_password: str
+        new_password: str,
+        *,
+        actor_id: int,
     ):
         validate_password(new_password)
         await self.get_or_raise(user_id)
         values: dict = {}
         values['password_hash'] = get_password_hash(new_password) 
         user =  await self.repo.update_user(user_id, values)  
-        logger.info('Пароль сброшен: user_id=$s', user_id)
+        logger.info(
+            'Пароль сброшен: target_user_id=%s, actor_id=%s',
+            user_id, actor_id
+        )
         return user
         

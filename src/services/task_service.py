@@ -42,15 +42,15 @@ class TaskService:
 
 
     async def list_tasks(
-            self,
-            *,
-            user_id: int,
-            can_access_any: bool,
-            status: Status | None,
-            priority: int | None,
-            limit: int,
-            offset: int,
-        ) -> list[TaskDB]:
+        self,
+        *,
+        user_id: int,
+        can_access_any: bool,
+        status: Status | None,
+        priority: int | None,
+        limit: int,
+        offset: int,
+    ) -> list[TaskDB]:
         if can_access_any:
             return await self.repo.list_filtered(
                 status=status, priority=priority, limit=limit, offset=offset,
@@ -89,6 +89,7 @@ class TaskService:
         data: TaskCreateSchema,
         *,
         owner_id: int,
+        actor_id: int
     ) -> TaskDB:
         existing = await self.repo.get_by_external_id(data.external_id)
         if existing is not None:
@@ -103,8 +104,8 @@ class TaskService:
         task = await self.repo.add(task)
     
         logger.info(
-            "Задача создана: external_id=%s, user_id=%s",
-            data.external_id, owner_id,
+            "Задача создана: external_id=%s, owner_id=%s, actor_id=%s",
+            data.external_id, owner_id, actor_id,
             extra={"event": "task_created", "task_id": task.id},
         )
         return task
@@ -115,7 +116,8 @@ class TaskService:
         *,
         expected_status: Status,
         new_status: Status,
-        caller: Caller
+        caller: Caller,
+        actor_id: int
     ) -> TaskDB:
         task = await self.get_or_raise(task_id)
         validate_transition_for_caller(
@@ -134,32 +136,41 @@ class TaskService:
             raise TaskStateConflictError(task_id, expected_status)
 
         logger.info(
-            "Статус задачи изменён: %s -> %s (caller=%s), user_id=%s",
-            expected_status, new_status.value, caller.value, task.owner_id,
+            "Статус задачи изменён: %s -> %s (caller=%s), owner_id=%s, actor_id=%s",
+            expected_status, new_status.value, caller.value, task.owner_id, actor_id,
             extra={"event": "task_status_changed", "task_id": task.id},
         )
         return task
 
-    async def delete(self, task_id: int) -> None:
+    async def delete(
+            self,
+            task_id: int, 
+            *,
+            actor_id: int,
+    ) -> None:
         task = await self.get_or_raise(task_id)
         try:
             await self.repo.delete(task)
         except Exception:
             logger.exception(
-                "Ошибка БД при удалении задачи: task_id=%s, user_id=%s",
-                task_id, task.owner_id,
+                "Ошибка БД при удалении задачи: task_id=%s, owner_id=%s, actor_id=%s",
+                task_id, task.owner_id, actor_id,
                 extra={"event": "task_delete_failed", "task_id": task_id},
             )
             raise
 
         logger.info(
-            "Задача удалена: task_id=%s,  user_id=%s",
-            task_id, task.owner_id,
+            "Задача удалена: task_id=%s,  owner_id=%s, actor_id=%s",
+            task_id, task.owner_id, actor_id,
             extra={"event": "task_deleted", "task_id": task_id},
         )
 
 
-    async def start_processing(self, task_id: int) -> TaskDB:
+    async def start_processing(
+            self, task_id: int,
+            *,
+            actor_id: int
+    ) -> StartProcessingResult:
         """NEW -> QUEUED -> PROCESSING -> DONE."""
 
         run_id = uuid.uuid4().hex
@@ -170,7 +181,11 @@ class TaskService:
             if existing is None:
                 logger.warning(
                     "Задача не найдена",
-                    extra={"event": "task_not_found", "task_id": task_id},
+                    extra={
+                        "event": "task_not_found", "task_id": task_id,
+                        'actor_id': actor_id 
+                    
+                    },
                 )
                 raise TaskNotFoundError(task_id)
             logger.warning(
@@ -182,8 +197,8 @@ class TaskService:
         
         
         logger.info(
-            'Задача поставлена в очередь: task_id=%s, run_id=%s , user=%s',
-            task_id, run_id, task.owner_id,
+            'Задача поставлена в очередь: task_id=%s, run_id=%s , owner_id=%s, actor_id=%s',
+            task_id, run_id, task.owner_id, actor_id,
             extra={'event': 'task_processing_started', 'task_id': task_id},
         )
         return StartProcessingResult(
@@ -192,7 +207,12 @@ class TaskService:
         )
 
     
-    async def retry_task(self, task_id) -> TaskDB:
+    async def retry_task(
+        self,
+        task_id,
+        *,
+        actor_id: int
+        ) -> StartProcessingResult:
         """ERROR -> QUEUED-> PROCESSING -> DONE/ERROR."""
         run_id = uuid.uuid4().hex
         task = await self.repo.mark_queued_error_task(task_id, run_id)
@@ -201,24 +221,29 @@ class TaskService:
             if existing is None:
                 logger.warning(
                     "Задача не найдена",
-                    extra={"event": "task_not_found", "task_id": task_id},
+                    extra={"event": "task_not_found", "task_id": task_id, 'actor_id': actor_id},
                 )
                 raise TaskNotFoundError(task_id)
             logger.warning(
                 "Задание нельзя обработать: status=%s",
                 existing.status,
-                extra={"event": "task_processing_failed", "task_id": task_id},
+                extra={"event": "task_processing_failed", "task_id": task_id, 'actor_id': actor_id},
             )
             raise TaskCannotBeRetryError(task_id, existing.status)
 
         
         logger.info(
-            "Запущена обработка задачи: task_id=%s user_id=%s", task_id, task.owner_id,
+            "Запущена обработка задачи: task_id=%s user_id=%s, actor_id=%s", task_id, task.owner_id, actor_id,
             extra={"event": "task_processing_retried", "task_id": task_id},
         )
         return StartProcessingResult(task=task, run_id=run_id)
 
-    async def cancel_task(self, task_id) -> TaskDB:
+    async def cancel_task(
+        self,
+        task_id,
+        *,
+        actor_id: int
+    ) -> TaskDB:
         task = await self.get_or_raise(task_id)
         validate_task_can_be_cancelled(task_id, task.status)
 
@@ -235,6 +260,7 @@ class TaskService:
         )
         if task_updated is None:
             raise TaskStateConflictError(task_id, task.status)
+        logger.info('Задача отменена: task_id=%s, actor_id=%s', task_id, actor_id)
         return task_updated
     
     async def begin_processing(

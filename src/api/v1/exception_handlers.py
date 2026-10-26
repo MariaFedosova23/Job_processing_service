@@ -22,6 +22,7 @@ from src.services.exceptions import (
     WrongPassword,
     InvalidPassword,
     InvalidUsername,
+    CurrentUserNotFound
 )
 
 logger = logging.getLogger('job_processing_service')
@@ -179,8 +180,16 @@ async def user_exists(
 ):
     return JSONResponse(status_code=409, content={'detail': str(exc)})
 
+
+async def current_user_not_found(_: Request, exc: CurrentUserNotFound):
+    """Токен валиден, но пользователь, на которого он ссылается, не существует → 401."""
+    return JSONResponse(
+        status_code=401,
+        content={'detail': 'Пользователь, связанный с токеном, не найден'},
+    )
+
 async def user_not_found(_: Request, exc: UserNotFound):
-    return JSONResponse(status_code=401, content={"detail": str(exc)})
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
 async def invalid_credentials(_: Request, exc: InvalidCredentials):
@@ -203,6 +212,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(UserInactive, user_inactive)
     app.add_exception_handler(InvalidCredentials, invalid_credentials)
     app.add_exception_handler(UserNotFound, user_not_found)
+    app.add_exception_handler(CurrentUserNotFound, current_user_not_found)
     app.add_exception_handler(TaskNotFoundError, task_not_found_handler)
     app.add_exception_handler(
         DuplicateExternalIdError, duplicate_external_id_handler,

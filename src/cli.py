@@ -3,9 +3,7 @@ import getpass
 from typing import Optional
 
 import typer
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.constants import MIN_LENGTH_PASSWORD, MAX_LENGTH_PASSWORD
 from src.database import AsyncSessionLocal
 from src.database.models.users import UserDB
 from src.database.repositories.user import UserRepository

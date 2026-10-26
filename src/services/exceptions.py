@@ -20,6 +20,10 @@ class InvalidPassword(DomainError):
         self.message = message
         super().__init__(f'Некорректный пароль: {message}')
 
+class CurrentUserNotFound(DomainError):
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+        super().__init__(f'Пользователь {user_id} не найден')
 
 class UserNotFound(DomainError):
     def __init__(self, user_id: int):

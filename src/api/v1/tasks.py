@@ -1,7 +1,6 @@
 import logging
 
 from fastapi import Query, APIRouter, UploadFile, File, Depends
-from authx import TokenPayload
 
 from src.schemas.tasks import (
     TaskCreateSchema,
@@ -27,7 +26,6 @@ from src.api.v1.dependencies import (
 from src.config import security
 from src.enums import Status, Caller
 from src.schemas.file import FileResponse
-# from src.auth.dependencies import get_current_user, require_scopes
 from src.database.models.task import TaskDB
 from src.database.models.users import UserDB
 
@@ -89,9 +87,11 @@ async def get_task(
 async def create_task(
     service: TaskServiceDep,
     task: TaskCreateSchema,
-    payload: TokenPayload = Depends(security.access_token_required),
+    current_user: UserDB = Depends(get_current_user),
 ) -> TaskShortSchema:
-    return await service.create(task, owner_id=int(payload.sub))
+    return await service.create(
+        task, owner_id=current_user.id, actor_id=current_user.id
+    )
 
     
 @router.patch(
@@ -103,6 +103,7 @@ async def create_task(
 async def patch_status_of_task(
     payload: TaskStatusUpdateSchema,
     service: TaskServiceDep,
+    current_user: UserDB = Depends(get_current_user),
     task: TaskDB = Depends(get_task_for_action('tasks:patch_status', 'tasks:patch_own_status')),
 ) -> TaskDetailSchema:
     return await service.change_status(
@@ -110,6 +111,7 @@ async def patch_status_of_task(
         expected_status=payload.expected_status,
         new_status=payload.status,
         caller=Caller.API_USER,
+        actor_id=current_user.id
     )
     
 @router.delete(
@@ -123,9 +125,10 @@ async def patch_status_of_task(
 )
 async def delete_task(
     service: TaskServiceDep,
+    current_user: UserDB = Depends(get_current_user),
     task: TaskDB = Depends(get_task_for_action('tasks:delete', 'tasks:delete_own')),
 ):
-    await service.delete(task.id)
+    await service.delete(task.id, actor_id=current_user.id)
     
 @router.post(
     '/{task_id}/process',
@@ -140,13 +143,14 @@ async def delete_task(
 async def process_task(
     # task_id: int,
     service: TaskServiceDep,
+    current_user: UserDB = Depends(get_current_user),
     task: TaskDB = Depends(get_task_for_action('tasks:process', 'tasks:process_own')),
 ):
-    result = await service.start_processing(task.id)
+    result = await service.start_processing(task.id, actor_id=current_user.id)
     return TaskResponseProcessSchema(
         id=result.task.id,
         status=result.task.status,
-        run_id=result.run_id,
+        run_id=result.run_id
     )
 
 @router.post(
@@ -162,13 +166,14 @@ async def process_task(
 async def retry_process_task(
     # task_id: int,
     service: TaskServiceDep,
+    current_user: UserDB = Depends(get_current_user),
     task: TaskDB = Depends(get_task_for_action('tasks:retry', 'tasks:retry_own')),
 ):
-    result = await service.retry_task(task.id)
+    result = await service.retry_task(task.id, actor_id=current_user.id)
     return TaskResponseProcessSchema(
         id=result.task.id,
         status=result.task.status,
-        run_id=result.run_id,
+        run_id=result.run_id
     )
 
 @router.post(
@@ -184,9 +189,10 @@ async def retry_process_task(
 async def cancel_process_task(
     # task_id: int,
     service: TaskServiceDep,
+    current_user: UserDB = Depends(get_current_user),
     task: TaskDB = Depends(get_task_for_action('tasks:cancel', 'tasks:cancel_own')),
 ):
-    result = await service.cancel_task(task.id)
+    result = await service.cancel_task(task.id, actor_id=current_user.id)
     return result
 
 @router.post(

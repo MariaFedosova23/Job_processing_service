@@ -1,8 +1,11 @@
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from src.database.models.users import UserDB
+from src.services.exceptions import UserAlreadyExists
+from src.services.validator_user import is_username_unique_violation
 from src.enums import Roles
 
 
@@ -33,7 +36,14 @@ class UserRepository:
             is_active=is_active
         )
         self.session.add(user)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            if is_username_unique_violation(exc):
+                raise UserAlreadyExists(username) from exc
+            raise
+
         await self.session.refresh(user)
         return user
 

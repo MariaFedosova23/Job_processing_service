@@ -19,8 +19,8 @@ from src.constants import (
     MIN_OFFSET,
     DEFAULT_OFFSET
 )
-from src.api.v1.dependencies import require_scopes
-
+from src.api.v1.dependencies import require_scopes, get_current_user
+from src.database.models import UserDB
 
 logger = logging.getLogger('job_processing_service')
 
@@ -39,12 +39,14 @@ router = APIRouter(prefix='/api/v1/users', tags=['users'])
 )
 async def create_user(
     service: UserServiceDep,
-    creds: CreateUserSchema
+    creds: CreateUserSchema,
+    current_user: UserDB = Depends(get_current_user)
 ):
     return await service.create_user(
         creds.username,
         creds.password,
-        creds.role
+        creds.role,
+        actor_id=current_user.id,
     )
 
 @router.get(
@@ -109,12 +111,14 @@ async def get_user(
 async def patch_user(
     payload: PatchUserSchema,
     user_id: int,
-    service: UserServiceDep
+    service: UserServiceDep,
+    current_user: UserDB = Depends(get_current_user)
 ) -> UserResponseSchema:
     return await service.patch_user(
         user_id,
         role=payload.role,
         is_active=payload.is_active,
+        actor_id=current_user.id,
     )
 
 
@@ -126,9 +130,11 @@ async def patch_user(
 async def reset_password(
     payload: ResetPasswordSchema,
     user_id: int,
-    service: UserServiceDep
+    service: UserServiceDep,
+    current_user: UserDB = Depends(get_current_user)
 ):
     return await service.reset_password(
         user_id,
-        payload.new_password
+        payload.new_password,
+        actor_id=current_user.id,
     )
